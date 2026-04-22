@@ -194,6 +194,11 @@ event-user =
 
     { hdr-hwid }
     { frg-user-hwid }
+
+    .not-connected =
+    <b>⚠️ Похоже, вы еще не подключились к VPN.</b>
+
+    Если после выдачи подписки соединение так и не заработало, обратитесь в поддержку. Поможем проверить настройки и подключение.
     
 
 event-subscription =
@@ -328,6 +333,34 @@ event-node =
 
     { hdr-node }
     { frg-node-info }
+
+
+event-torrent-blocker =
+    .user-blocked =
+    <b>⛔ Доступ на сервере временно ограничен.</b>
+
+    На ноде <b>{ $node_name }</b> зафиксирован BitTorrent-трафик.
+    Ограничение будет действовать еще <b>{ $block_duration }</b>.
+
+    Если нужна помощь с настройкой подключения, обратитесь в поддержку.
+
+    .admin-report =
+    #TorrentBlockedAdminEvent
+
+    <b>⚠️ Событие: Обнаружен BitTorrent-трафик!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
+    <blockquote>
+    • <b>Нода</b>: { $node_name }
+    • <b>IP</b>: <code>{ $blocked_ip }</code>
+    • <b>Длительность блока</b>: { $block_duration }
+    • <b>Разблокировка</b>: { $will_unblock_at }
+    • <b>Протокол</b>: <code>{ $protocol }</code>
+    • <b>Источник</b>: <code>{ $source }</code>
+    • <b>Назначение</b>: <code>{ $destination }</code>
+    </blockquote>
 
 
 event-referral =

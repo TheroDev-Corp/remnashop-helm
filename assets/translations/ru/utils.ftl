@@ -322,6 +322,8 @@ gateway-type = { $gateway_type ->
     *[OTHER] { $gateway_type }
 }
 
+gateway-display-name-platega = СБП / Крипта
+
 access-mode = { $access_mode ->
     [PUBLIC] 🟢 Разрешен для всех
     [INVITED] 🟡 Разрешен для приглашенных
@@ -416,6 +418,8 @@ notification-type = { $notification_type ->
     [EXPIRED] Подписка истекла
     [EXPIRED_1_DAY_AGO] Подписка истекла (1 день)
     [LIMITED] Трафик исчерпан
+    [NOT_CONNECTED] Нет подключений после выдачи
+    [TORRENT_BLOCKED] Ограничение из-за BitTorrent
     [REFERRAL_ATTACHED] Реферал закреплен
     [REFERRAL_REWARD_RECEIVED] Вознаграждение за реферала
     [BOT_LIFECYCLE] Жизненный цикл бота
@@ -426,6 +430,7 @@ notification-type = { $notification_type ->
     [TRIAL_ACTIVATED] Активация пробника
     [NODE_STATUS_CHANGED] Статус узла
     [NODE_TRAFFIC_REACHED] Трафик узла
+    [TORRENT_BLOCKER] BitTorrent на ноде
     [USER_FIRST_CONNECTION] Первое подключение
     [USER_DEVICES_UPDATED] Устройства пользователя
     [USER_REVOKED_SUBSCRIPTION] Сброс подписки

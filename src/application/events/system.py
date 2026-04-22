@@ -316,7 +316,7 @@ class UserFirstConnectionEvent(UserEvent):
         return MessagePayloadDto(
             i18n_key=self.event_key,
             i18n_kwargs={**asdict(self)},
-            reply_markup=get_user_keyboard(self.telegram_id),
+            reply_markup=get_user_keyboard(self.telegram_id) if self.telegram_id else None,
             disable_default_markup=False,
             delete_after=None,
         )
@@ -341,7 +341,7 @@ class UserDevicesUpdatedEvent(UserEvent):
         return MessagePayloadDto(
             i18n_key=self.event_key,
             i18n_kwargs={**asdict(self)},
-            reply_markup=get_user_keyboard(self.telegram_id),
+            reply_markup=get_user_keyboard(self.telegram_id) if self.telegram_id else None,
             disable_default_markup=False,
             delete_after=None,
         )
@@ -385,6 +385,37 @@ class NodeTrafficReachedEvent(NodeEvent):
     @property
     def event_key(self) -> str:
         return "event-node.traffic-reached"
+
+
+@dataclass(frozen=True, kw_only=True)
+class TorrentBlockedAdminEvent(UserEvent):
+    notification_type: NotificationType = field(
+        default=SystemNotificationType.TORRENT_BLOCKER,
+        init=False,
+    )
+
+    node_name: str
+    blocked_ip: str
+    block_duration: Any
+    will_unblock_at: str
+    protocol: str
+    source: str
+    destination: str
+
+    @property
+    def event_key(self) -> str:
+        return "event-torrent-blocker.admin-report"
+
+    def as_payload(self) -> "MessagePayloadDto":
+        from src.telegram.keyboards import get_user_keyboard  # noqa: PLC0415
+
+        return MessagePayloadDto(
+            i18n_key=self.event_key,
+            i18n_kwargs={**asdict(self)},
+            reply_markup=get_user_keyboard(self.telegram_id),
+            disable_default_markup=False,
+            delete_after=None,
+        )
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -1,8 +1,9 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import cast
+from typing import Any, cast
 
 from loguru import logger
+from redis.asyncio import Redis
 from remnapy.models.webhook import HwidUserDeviceDto, NodeDto
 
 from src.application.common import EventPublisher
@@ -13,20 +14,23 @@ from src.application.events import (
     NodeConnectionLostEvent,
     NodeConnectionRestoredEvent,
     NodeTrafficReachedEvent,
+    NotConnectedEvent,
     SubscriptionExpiredEvent,
     SubscriptionExpiresEvent,
     SubscriptionLimitedEvent,
+    TorrentBlockedEvent,
     UserDeviceAddedEvent,
     UserDeviceDeletedEvent,
     UserFirstConnectionEvent,
 )
-from src.application.events.system import SubscriptionRevokedEvent
+from src.application.events.system import SubscriptionRevokedEvent, TorrentBlockedAdminEvent
 from src.application.events.user import SubscriptionExpiredAgoEvent
+from src.application.services.bot import BotService
 from src.application.use_cases.remnawave.commands.synchronization import (
     SyncRemnaUser,
     SyncRemnaUserDto,
 )
-from src.core.constants import DATETIME_VIEW_FORMAT, IMPORTED_TAG
+from src.core.constants import DATETIME_VIEW_FORMAT, IMPORTED_TAG, TIME_1H
 from src.core.enums import SubscriptionStatus
 from src.core.types import RemnaUserDto
 from src.core.utils.converters import country_code_to_flag
@@ -34,6 +38,7 @@ from src.core.utils.i18n_helpers import (
     i18n_format_bytes_to_unit,
     i18n_format_device_limit,
     i18n_format_expire_time,
+    i18n_format_seconds,
 )
 from src.core.utils.i18n_keys import ByteUnitKey
 from src.core.utils.time import datetime_now, get_traffic_reset_delta
@@ -46,6 +51,8 @@ class RemnaWebhookService:
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
         event_bus: EventPublisher,
+        redis: Redis,
+        bot_service: BotService,
         #
         sync_user: SyncRemnaUser,
     ) -> None:
@@ -53,12 +60,13 @@ class RemnaWebhookService:
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
         self.event_bus = event_bus
+        self.redis = redis
+        self.bot_service = bot_service
         #
         self.sync_user = sync_user
 
     async def handle_user_event(self, event: str, remna_user: RemnaUserDto) -> None:
         logger.debug(f"Received user event '{event}'")
-        # TODO: Not connected event
 
         if not remna_user.telegram_id:
             logger.debug(
@@ -83,64 +91,12 @@ class RemnaWebhookService:
             )
             return
 
-        if event == RemnaUserEvent.DELETED:
-            logger.debug(f"Executing deletion for RemnaUser '{remna_user.telegram_id}'")
-            await self._process_delete_subscription(remna_user)
-
-        elif event in {
-            RemnaUserEvent.REVOKED,
-            RemnaUserEvent.ENABLED,
-            RemnaUserEvent.DISABLED,
-            RemnaUserEvent.LIMITED,
-            RemnaUserEvent.EXPIRED,
-        }:
-            await self._process_status(user, current_subscription, event, remna_user)
-
-        elif event == RemnaUserEvent.EXPIRED_24_HOURS_AGO:
-            await self.event_bus.publish(
-                SubscriptionExpiredAgoEvent(
-                    user=user,
-                    is_trial=current_subscription.is_trial,
-                    day=1,
-                )
-            )
-
-        elif event in {
-            RemnaUserEvent.EXPIRES_IN_72_HOURS,
-            RemnaUserEvent.EXPIRES_IN_48_HOURS,
-            RemnaUserEvent.EXPIRES_IN_24_HOURS,
-        }:
-            expire_map: dict[str, int] = {
-                RemnaUserEvent.EXPIRES_IN_72_HOURS: 3,
-                RemnaUserEvent.EXPIRES_IN_48_HOURS: 2,
-                RemnaUserEvent.EXPIRES_IN_24_HOURS: 1,
-            }
-            await self.event_bus.publish(
-                SubscriptionExpiresEvent(
-                    day=expire_map[event],
-                    user=user,
-                    is_trial=current_subscription.is_trial,
-                )
-            )
-
-        elif event == RemnaUserEvent.FIRST_CONNECTED:
-            await self.event_bus.publish(
-                UserFirstConnectionEvent(
-                    telegram_id=user.telegram_id,
-                    username=user.username,
-                    name=user.name,
-                    is_trial=current_subscription.is_trial,
-                    subscription_id=remna_user.uuid,
-                    subscription_status=SubscriptionStatus(remna_user.status),
-                    traffic_used=i18n_format_bytes_to_unit(
-                        remna_user.used_traffic_bytes, min_unit=ByteUnitKey.MEGABYTE
-                    ),
-                    traffic_limit=i18n_format_bytes_to_unit(remna_user.traffic_limit_bytes or None),
-                    device_limit=i18n_format_device_limit(remna_user.hwid_device_limit),
-                    expire_time=i18n_format_expire_time(remna_user.expire_at),
-                )
-            )
-        else:
+        if not await self._process_known_user_event(
+            event=event,
+            user=user,
+            current_subscription=current_subscription,
+            remna_user=remna_user,
+        ):
             logger.warning(f"Unhandled user event '{event}' for '{remna_user.telegram_id}'")
 
     async def handle_device_event(
@@ -240,6 +196,102 @@ class RemnaWebhookService:
                 )
             )
 
+    async def handle_torrent_blocker_event(self, payload: dict[str, Any]) -> None:
+        logger.info("Received torrent blocker webhook event")
+
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            logger.warning("Torrent blocker payload is missing 'data' object")
+            return
+
+        user_data = data.get("user")
+        node_data = data.get("node")
+        report = data.get("report")
+
+        if not isinstance(user_data, dict) or not isinstance(node_data, dict):
+            logger.warning("Torrent blocker payload is missing 'user' or 'node' object")
+            return
+
+        if not isinstance(report, dict):
+            logger.warning("Torrent blocker payload is missing 'report' object")
+            return
+
+        action_report = report.get("actionReport")
+        xray_report = report.get("xrayReport")
+
+        if not isinstance(action_report, dict) or not isinstance(xray_report, dict):
+            logger.warning("Torrent blocker payload is missing action/xray report details")
+            return
+
+        if not action_report.get("blocked"):
+            logger.debug("Torrent blocker report did not result in a block, skipping")
+            return
+
+        telegram_id = self._parse_int(user_data.get("telegramId"))
+        user_identifier = (
+            self._parse_optional_str(user_data.get("telegramId"))
+            or self._parse_optional_str(action_report.get("userId"))
+            or self._parse_optional_str(user_data.get("uuid"))
+            or "unknown"
+        )
+        node_name = self._parse_optional_str(node_data.get("name")) or "Unknown"
+        blocked_ip = self._parse_optional_str(action_report.get("ip")) or "unknown"
+        block_duration_seconds = self._parse_int(action_report.get("blockDuration")) or TIME_1H
+
+        dedupe_key = self._build_torrent_blocker_key(
+            user_identifier=user_identifier,
+            node_name=node_name,
+            blocked_ip=blocked_ip,
+        )
+        if await self.redis.exists(dedupe_key):
+            logger.debug(f"Torrent blocker notification already processed for key '{dedupe_key}'")
+            return
+
+        await self.redis.set(dedupe_key, value="1", ex=block_duration_seconds)
+
+        user = await self.user_dao.get_by_telegram_id(telegram_id) if telegram_id else None
+
+        username = user.username if user else self._parse_optional_str(user_data.get("username"))
+        name = user.name if user else (username or f"ID {user_identifier}")
+        block_duration = i18n_format_seconds(block_duration_seconds)
+        will_unblock_at = self._format_torrent_unblock_time(
+            action_report.get("willUnblockAt"),
+            block_duration_seconds,
+        )
+        protocol = self._parse_optional_str(xray_report.get("protocol")) or "unknown"
+        source = self._parse_optional_str(xray_report.get("source")) or "unknown"
+        destination = self._parse_optional_str(xray_report.get("destination")) or "unknown"
+
+        await self.event_bus.publish(
+            TorrentBlockedAdminEvent(
+                telegram_id=telegram_id or 0,
+                username=username,
+                name=name,
+                node_name=node_name,
+                blocked_ip=blocked_ip,
+                block_duration=block_duration,
+                will_unblock_at=will_unblock_at,
+                protocol=protocol,
+                source=source,
+                destination=destination,
+            )
+        )
+
+        if not user:
+            logger.warning(
+                f"Local user not found for torrent blocker notification '{user_identifier}'"
+            )
+            return
+
+        await self.event_bus.publish(
+            TorrentBlockedEvent(
+                user=user,
+                node_name=node_name,
+                block_duration=block_duration,
+                support_url=self.bot_service.get_support_url(),
+            )
+        )
+
     async def _process_sync(self, event: str, remna_user: RemnaUserDto) -> None:
         if event == RemnaUserEvent.CREATED and remna_user.tag != IMPORTED_TAG:
             logger.debug(
@@ -250,6 +302,79 @@ class RemnaWebhookService:
         logger.debug(f"Executing sync for user '{remna_user.telegram_id}' due to event '{event}'")
         dto = SyncRemnaUserDto(remna_user=remna_user, creating=(event == RemnaUserEvent.CREATED))
         await self.sync_user.system(dto)
+
+    async def _process_known_user_event(
+        self,
+        event: str,
+        user: UserDto,
+        current_subscription: SubscriptionDto,
+        remna_user: RemnaUserDto,
+    ) -> bool:
+        if event == RemnaUserEvent.DELETED:
+            logger.debug(f"Executing deletion for RemnaUser '{remna_user.telegram_id}'")
+            await self._process_delete_subscription(remna_user)
+            return True
+
+        if event == RemnaUserEvent.NOT_CONNECTED:
+            await self.event_bus.publish(
+                NotConnectedEvent(
+                    user=user,
+                    support_url=self.bot_service.get_support_url(),
+                )
+            )
+            return True
+
+        if event in {
+            RemnaUserEvent.REVOKED,
+            RemnaUserEvent.ENABLED,
+            RemnaUserEvent.DISABLED,
+            RemnaUserEvent.LIMITED,
+            RemnaUserEvent.EXPIRED,
+        }:
+            await self._process_status(user, current_subscription, event, remna_user)
+            return True
+
+        if event == RemnaUserEvent.EXPIRED_24_HOURS_AGO:
+            await self.event_bus.publish(
+                SubscriptionExpiredAgoEvent(
+                    user=user,
+                    is_trial=current_subscription.is_trial,
+                    day=1,
+                )
+            )
+            return True
+
+        expire_day = self._get_expire_warning_day(event)
+        if expire_day is not None:
+            await self.event_bus.publish(
+                SubscriptionExpiresEvent(
+                    day=expire_day,
+                    user=user,
+                    is_trial=current_subscription.is_trial,
+                )
+            )
+            return True
+
+        if event == RemnaUserEvent.FIRST_CONNECTED:
+            await self.event_bus.publish(
+                UserFirstConnectionEvent(
+                    telegram_id=user.telegram_id,
+                    username=user.username,
+                    name=user.name,
+                    is_trial=current_subscription.is_trial,
+                    subscription_id=remna_user.uuid,
+                    subscription_status=SubscriptionStatus(remna_user.status),
+                    traffic_used=i18n_format_bytes_to_unit(
+                        remna_user.used_traffic_bytes, min_unit=ByteUnitKey.MEGABYTE
+                    ),
+                    traffic_limit=i18n_format_bytes_to_unit(remna_user.traffic_limit_bytes or None),
+                    device_limit=i18n_format_device_limit(remna_user.hwid_device_limit),
+                    expire_time=i18n_format_expire_time(remna_user.expire_at),
+                )
+            )
+            return True
+
+        return False
 
     async def _process_delete_subscription(self, remna_user: RemnaUserDto) -> None:
         async with self.uow:
@@ -332,6 +457,53 @@ class RemnaWebhookService:
                 )
             )
 
+    @staticmethod
+    def _build_torrent_blocker_key(
+        user_identifier: str,
+        node_name: str,
+        blocked_ip: str,
+    ) -> str:
+        return f"torrent_blocker_lock:{user_identifier}:{node_name}:{blocked_ip}"
+
+    @staticmethod
+    def _parse_int(value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _parse_optional_str(value: Any) -> str | None:
+        if value is None:
+            return None
+
+        normalized = str(value).strip()
+        return normalized or None
+
+    @staticmethod
+    def _get_expire_warning_day(event: str) -> int | None:
+        expire_map: dict[str, int] = {
+            RemnaUserEvent.EXPIRES_IN_72_HOURS: 3,
+            RemnaUserEvent.EXPIRES_IN_48_HOURS: 2,
+            RemnaUserEvent.EXPIRES_IN_24_HOURS: 1,
+        }
+        return expire_map.get(event)
+
+    @staticmethod
+    def _format_torrent_unblock_time(value: Any, block_duration_seconds: int) -> str:
+        raw_timestamp = RemnaWebhookService._parse_optional_str(value)
+        if raw_timestamp:
+            try:
+                return datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00")).strftime(
+                    DATETIME_VIEW_FORMAT
+                )
+            except ValueError:
+                return raw_timestamp
+
+        return (datetime_now() + timedelta(seconds=block_duration_seconds)).strftime(
+            DATETIME_VIEW_FORMAT
+        )
+
 
 class RemnaUserEvent(StrEnum):
     CREATED = "user.created"
@@ -368,6 +540,10 @@ class RemnaNodeEvent(StrEnum):
     CONNECTION_LOST = "node.connection_lost"
     CONNECTION_RESTORED = "node.connection_restored"
     TRAFFIC_NOTIFY = "node.traffic_notify"
+
+
+class RemnaTorrentBlockerEvent(StrEnum):
+    REPORT = "torrent_blocker.report"
 
 
 class RemnaServiceEvent(StrEnum):

@@ -123,6 +123,58 @@ class SubscriptionExpiresEvent(UserEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
+class TorrentBlockedEvent(UserEvent):
+    notification_type: NotificationType = field(
+        default=UserNotificationType.TORRENT_BLOCKED,
+        init=False,
+    )
+
+    node_name: str
+    block_duration: Any
+    support_url: str
+
+    @property
+    def event_key(self) -> str:
+        return "event-torrent-blocker.user-blocked"
+
+    def as_payload(self) -> "MessagePayloadDto":
+        from src.telegram.keyboards import get_contact_support_keyboard  # noqa: PLC0415
+
+        return MessagePayloadDto(
+            i18n_key=self.event_key,
+            i18n_kwargs={**asdict(self)},
+            reply_markup=get_contact_support_keyboard(self.support_url),
+            disable_default_markup=False,
+            delete_after=None,
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class NotConnectedEvent(UserEvent):
+    notification_type: NotificationType = field(
+        default=UserNotificationType.NOT_CONNECTED,
+        init=False,
+    )
+
+    support_url: str
+
+    @property
+    def event_key(self) -> str:
+        return "event-user.not-connected"
+
+    def as_payload(self) -> "MessagePayloadDto":
+        from src.telegram.keyboards import get_contact_support_keyboard  # noqa: PLC0415
+
+        return MessagePayloadDto(
+            i18n_key=self.event_key,
+            i18n_kwargs={**asdict(self)},
+            reply_markup=get_contact_support_keyboard(self.support_url),
+            disable_default_markup=False,
+            delete_after=None,
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
 class ReferralEvent(UserEvent):
     name: str
 

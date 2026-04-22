@@ -12,6 +12,7 @@ from .system import (
     NotificationErrorEvent,
     RemnawaveErrorEvent,
     RemnawaveVersionWarningEvent,
+    TorrentBlockedAdminEvent,
     TrialActivatedEvent,
     UserDeviceAddedEvent,
     UserDeviceDeletedEvent,
@@ -21,12 +22,14 @@ from .system import (
     WebhookErrorEvent,
 )
 from .user import (
+    NotConnectedEvent,
     ReferralAttachedEvent,
     ReferralRewardFailedEvent,
     ReferralRewardReceivedEvent,
     SubscriptionExpiredEvent,
     SubscriptionExpiresEvent,
     SubscriptionLimitedEvent,
+    TorrentBlockedEvent,
 )
 
 __all__ = [
@@ -48,6 +51,7 @@ __all__ = [
     "NodeConnectionLostEvent",
     "NodeConnectionRestoredEvent",
     "NodeTrafficReachedEvent",
+    "TorrentBlockedAdminEvent",
     #
     "UserDeviceAddedEvent",
     "UserDeviceDeletedEvent",
@@ -55,6 +59,7 @@ __all__ = [
     "UserPurchaseEvent",
     "UserRegisteredEvent",
     #
+    "NotConnectedEvent",
     "ReferralAttachedEvent",
     "ReferralRewardFailedEvent",
     "ReferralRewardReceivedEvent",
@@ -63,4 +68,5 @@ __all__ = [
     "SubscriptionExpiredEvent",
     "SubscriptionExpiresEvent",
     "SubscriptionLimitedEvent",
+    "TorrentBlockedEvent",
 ]
