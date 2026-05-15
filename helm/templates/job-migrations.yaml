@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "remnashop.fullname" . }}-db-migrate
+  labels:
+    {{- include "remnashop.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    metadata:
+      name: {{ include "remnashop.fullname" . }}-db-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: alembic-upgrade
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          # Явно переопределяем команду, игнорируя docker-entrypoint.sh
+          command: ["alembic", "-c", "src/infrastructure/database/alembic.ini", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "remnashop.fullname" . }}-config
+            - secretRef:
+                name: {{ include "remnashop.fullname" . }}-secrets
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "remnashop.fullname" . }}-db-app
+                  key: password

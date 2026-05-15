@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "remnashop.fullname" . }}-config
+  labels:
+    {{- include "remnashop.labels" . | nindent 4 }}
+data:
+  APP_DOMAIN: {{ .Values.config.appDomain | quote }}
+  APP_PORT: {{ .Values.config.appPort | quote }}
+  APP_HOST: "0.0.0.0"
+  
+  LOG_TO_FILE: "false"
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  
+  REMNAWAVE_HOST: {{ .Values.config.remnawaveHost | quote }}
+  
+  DATABASE_HOST: {{ include "remnashop.fullname" . }}-db-rw
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "remnashop"
+  DATABASE_USER: "remnashop"
+  
+  REDIS_HOST: {{ include "remnashop.fullname" . }}-valkey
+  REDIS_PORT: "6379"
+  REDIS_NAME: "0"

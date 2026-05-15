@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "remnashop.fullname" . }}-app
+  labels:
+    {{- include "remnashop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: main-app
+spec:
+  replicas: {{ .Values.app.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "remnashop.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: main-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "remnashop.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: main-app
+    spec:
+      initContainers:
+        - name: init-assets
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          # Копируем ассеты только если папка пуста
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -z "$(ls -A /opt/remnashop/assets 2>/dev/null)" ]; then
+                echo "Volume is empty. Copying default assets..."
+                cp -a /opt/remnashop/assets.default/. /opt/remnashop/assets/
+              else
+                echo "Volume is not empty. Skipping assets copy."
+              fi
+          volumeMounts:
+            - name: assets-storage
+              mountPath: /opt/remnashop/assets
+      containers:
+        - name: app
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          # Жестко указываем старт uvicorn
+          command: ["uvicorn", "src.__main__:application", "--host", "0.0.0.0", "--port", "5000", "--factory"]
+          ports:
+            - name: http
+              containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: {{ include "remnashop.fullname" . }}-config
+            - secretRef:
+                name: {{ include "remnashop.fullname" . }}-secrets
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "remnashop.fullname" . }}-db-app
+                  key: password
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+          volumeMounts:
+            - name: assets-storage
+              mountPath: /opt/remnashop/assets
+      volumes:
+        - name: assets-storage
+          {{- if .Values.assets.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "remnashop.fullname" . }}-assets
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

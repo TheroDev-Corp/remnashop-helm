@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "remnashop.fullname" . }}-worker
+  labels:
+    {{- include "remnashop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: taskiq-worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "remnashop.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: taskiq-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "remnashop.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: taskiq-worker
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          command: 
+            - "taskiq"
+            - "worker"
+            - "src.infrastructure.taskiq.worker:worker"
+            - "--ack-type"
+            - "when_received"
+            - "--tasks-pattern"
+            - "src/infrastructure/taskiq/tasks/*.py"
+            - "-fsd"
+          envFrom:
+            - configMapRef:
+                name: {{ include "remnashop.fullname" . }}-config
+            - secretRef:
+                name: {{ include "remnashop.fullname" . }}-secrets
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "remnashop.fullname" . }}-db-app
+                  key: password
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

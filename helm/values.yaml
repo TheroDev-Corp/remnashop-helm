@@ -1,0 +1,97 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Глобальные настройки бота
+config:
+  appDomain: "bot.example.com"
+  appPort: 5000
+  logLevel: "INFO"
+  # URL панели (указываем Ingress панели или внутренний k8s service)
+  remnawaveHost: "http://remnaware-panel-backend.remnaware-namespace.svc.cluster.local:3000"
+
+secrets:
+  appCryptKey: "change_me_44_chars_base64_string="
+  botToken: "1234567890:AAH_change_me"
+  botSecretToken: "super_secret_webhook_token"
+  botOwnerId: "123456789"
+  botSupportUsername: "support_bot"
+  remnawaveToken: "change_me"
+  remnawaveWebhookSecret: "change_me"
+
+# Основное приложение (FastAPI + Aiogram Webhook)
+app:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/snoups/remnashop
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Taskiq Worker (Фоновые задачи)
+worker:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Taskiq Scheduler (Cron-задачи)
+scheduler:
+  replicaCount: 1 # ВСЕГДА 1, иначе задвоятся cron-таски!
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Хранилище для баннеров и переводов
+assets:
+  persistence:
+    enabled: true
+    storageClass: "local-path" # Замени на свой, если нужно
+    size: 1Gi
+    accessMode: ReadWriteOnce
+
+# Настройки Ingress
+ingress:
+  enabled: false
+  className: "traefik"
+  annotations: {}
+  hosts:
+    - host: bot.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+# БД CloudNativePG
+cnpg:
+  enabled: true
+  instances: 1
+  storage:
+    size: 5Gi
+    storageClass: "local-path"
+
+# Valkey (Кэш и Брокер Taskiq)
+valkey:
+  enabled: true
+  image:
+    repository: valkey/valkey
+    tag: 9-alpine
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi

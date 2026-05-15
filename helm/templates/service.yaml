@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "remnashop.fullname" . }}
+  labels:
+    {{- include "remnashop.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.config.appPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "remnashop.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: main-app
