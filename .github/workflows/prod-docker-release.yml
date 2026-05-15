@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧾 Checkout Repository
+      - name: 🧾 Checkout main branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -25,16 +25,14 @@ jobs:
         run: |
           echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
-      - name: 🔖 Get latest tag
-        id: latest-tag
-        uses: JinoArch/get-latest-tag@latest
-
       - name: 🏷️ Define Build Args
         id: vars
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           IMAGE_REPO="ghcr.io/${{ env.REPO_LC }}"
+          
+          # Берем имя тега или ветки (если запуск ручной)
           BUILD_TAG="${{ github.ref_name }}"
           IMAGE_TAGS="${IMAGE_REPO}:latest,${IMAGE_REPO}:${BUILD_TAG}"
 
@@ -54,7 +52,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: 🏗️ Build and Push Docker Image
         uses: docker/build-push-action@v5
@@ -69,17 +67,15 @@ jobs:
             BUILD_COMMIT=${{ steps.vars.outputs.short_sha }}
             BUILD_TAG=${{ steps.vars.outputs.build_tag }}
 
-      - name: 📝 Update GitHub Release Body
-        if: github.event_name == 'release'
+      - name: 📦 Create GitHub Release
         uses: softprops/action-gh-release@v2
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         with:
           tag_name: ${{ github.ref_name }}
-          generate_release_notes: false
+          name: Remnashop ${{ github.ref_name }}
+          generate_release_notes: true
+          append_body: true
           body: |
-            # 🛍 Remnashop ${{ github.ref_name }} 
-            
-            ---
-            - [Compare changes (${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})](https://github.com/snoups/remnashop/compare/${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})
             ---
 
             ## 🐳 Docker Images
