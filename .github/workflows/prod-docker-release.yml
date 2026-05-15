@@ -3,19 +3,27 @@ name: Remnashop - Release
 on:
   release:
     types: [published]
-
   workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   release:
+    name: 🚀 Build and Release Prod
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧾 Checkout main branch
+      - name: 🧾 Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 🔤 Set Lowercase Repository Name
+        id: repo_name
+        run: |
+          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
       - name: 🔖 Get latest tag
         id: latest-tag
@@ -26,12 +34,15 @@ jobs:
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          IMAGE_REPO="ghcr.io/${GITHUB_REPOSITORY}"
-          IMAGE_TAGS="${IMAGE_REPO}:latest,${IMAGE_REPO}:${GITHUB_REF_NAME}"
+          IMAGE_REPO="ghcr.io/${{ env.REPO_LC }}"
+          BUILD_TAG="${{ github.ref_name }}"
+          IMAGE_TAGS="${IMAGE_REPO}:latest,${IMAGE_REPO}:${BUILD_TAG}"
 
-          echo "image_tag=${IMAGE_TAGS}" >> $GITHUB_OUTPUT
+          echo "image_tags=${IMAGE_TAGS}" >> $GITHUB_OUTPUT
           echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
+          echo "build_tag=${BUILD_TAG}" >> $GITHUB_OUTPUT
+          
           echo "✅ Tags: ${IMAGE_TAGS}"
           echo "✅ SHA: ${SHORT_SHA}"
 
@@ -43,51 +54,42 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 🏗️ Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/snoups/remnashop:latest
-            ghcr.io/snoups/remnashop:${{ github.ref_name }}
+          tags: ${{ steps.vars.outputs.image_tags }}
           build-args: |
             BUILD_TIME=${{ steps.vars.outputs.build_time }}
-            BUILD_BRANCH=main
+            BUILD_BRANCH=${{ github.ref_name }}
             BUILD_COMMIT=${{ steps.vars.outputs.short_sha }}
-            BUILD_TAG=${{ github.ref_name }}
+            BUILD_TAG=${{ steps.vars.outputs.build_tag }}
 
-      - name: 📦 Create GitHub Release
+      - name: 📝 Update GitHub Release Body
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
           generate_release_notes: false
           body: |
             # 🛍 Remnashop ${{ github.ref_name }} 
-            [![Telegram Group](https://img.shields.io/badge/public_group-white?style=social&logo=Telegram&logoColor=blue)](https://t.me/remna_shop)
-            [![Remnawave](https://img.shields.io/badge/remnawave-white?style=social&logo=Telegram&logoColor=blue)](https://t.me/+xQs17zMzwCY1NzYy)
-
+            
             ---
-
             - [Compare changes (${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})](https://github.com/snoups/remnashop/compare/${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})
-
             ---
 
             ## 🐳 Docker Images
 
             ### Latest:
-            ```
-            ghcr.io/snoups/remnashop:latest
+            ```bash
+            ghcr.io/${{ env.REPO_LC }}:latest
             ```
 
             ### Versioned:
+            ```bash
+            ghcr.io/${{ env.REPO_LC }}:${{ github.ref_name }}
             ```
-            ghcr.io/snoups/remnashop:${{ github.ref_name }}
-            ```
-          draft: false
-          prerelease: false
