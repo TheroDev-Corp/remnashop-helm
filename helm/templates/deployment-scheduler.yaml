@@ -34,7 +34,7 @@ spec:
             - configMapRef:
                 name: {{ include "remnashop.fullname" . }}-config
             - secretRef:
-                name: {{ include "remnashop.fullname" . }}-secrets
+                name: {{ include "remnashop.secretName" . }}
           env:
             - name: DATABASE_PASSWORD
               valueFrom:

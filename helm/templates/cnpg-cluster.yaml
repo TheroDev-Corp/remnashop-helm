@@ -1,4 +1,4 @@
-{{- if .Values.cnpg.enabled -}}
+{{- if .Values.cnpg.enabled }}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -7,17 +7,16 @@ metadata:
     {{- include "remnashop.labels" . | nindent 4 }}
 spec:
   instances: {{ .Values.cnpg.instances }}
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6
   
+  primaryUpdateStrategy: unsupervised
+
   storage:
-    size: {{ .Values.cnpg.storage.size | quote }}
-    {{- if .Values.cnpg.storage.storageClass }}
-    storageClass: {{ .Values.cnpg.storage.storageClass | quote }}
-    {{- end }}
+    size: {{ .Values.cnpg.storage.size }}
+    storageClass: {{ .Values.cnpg.storage.storageClass }}
 
   bootstrap:
     initdb:
       database: remnashop
       owner: remnashop
-      secret:
-        name: {{ include "remnashop.fullname" . }}-db-app
 {{- end }}

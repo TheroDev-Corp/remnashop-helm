@@ -1,10 +1,8 @@
 {{- if .Values.ingress.enabled -}}
-{{- $fullName := include "remnashop.fullname" . -}}
-{{- $svcPort := .Values.config.appPort -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ $fullName }}
+  name: {{ include "remnashop.fullname" . }}
   labels:
     {{- include "remnashop.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
@@ -35,9 +33,9 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ $fullName }}
+                name: {{ include "remnashop.fullname" $ }}
                 port:
-                  number: {{ $svcPort }}
+                  number: {{ $.Values.config.appPort }}
           {{- end }}
     {{- end }}
 {{- end }}

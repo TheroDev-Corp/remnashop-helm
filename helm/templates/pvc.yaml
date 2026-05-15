@@ -1,4 +1,4 @@
-{{- if .Values.assets.persistence.enabled -}}
+{{- if .Values.assets.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -7,11 +7,11 @@ metadata:
     {{- include "remnashop.labels" . | nindent 4 }}
 spec:
   accessModes:
-    - {{ .Values.assets.persistence.accessMode | quote }}
+    - {{ .Values.assets.persistence.accessMode | default "ReadWriteOnce" }}
+  {{- if .Values.assets.persistence.storageClass }}
+  storageClassName: {{ .Values.assets.persistence.storageClass }}
+  {{- end }}
   resources:
     requests:
-      storage: {{ .Values.assets.persistence.size | quote }}
-  {{- if .Values.assets.persistence.storageClass }}
-  storageClassName: {{ .Values.assets.persistence.storageClass | quote }}
-  {{- end }}
+      storage: {{ .Values.assets.persistence.size }}
 {{- end }}

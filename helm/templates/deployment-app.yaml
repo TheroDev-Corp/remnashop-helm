@@ -44,11 +44,24 @@ spec:
           ports:
             - name: http
               containerPort: 5000
+          # LivenessProbe
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
           envFrom:
             - configMapRef:
                 name: {{ include "remnashop.fullname" . }}-config
             - secretRef:
-                name: {{ include "remnashop.fullname" . }}-secrets
+                name: {{ include "remnashop.secretName" . }}  
           env:
             - name: DATABASE_PASSWORD
               valueFrom:
