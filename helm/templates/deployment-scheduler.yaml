@@ -6,7 +6,7 @@ metadata:
     {{- include "remnashop.labels" . | nindent 4 }}
     app.kubernetes.io/component: taskiq-scheduler
 spec:
-  replicas: {{ .Values.scheduler.replicaCount }}
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "remnashop.name" . }}
@@ -19,6 +19,16 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: taskiq-scheduler
     spec:
+      initContainers:
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - "until pg_isready -h $DATABASE_HOST -p $DATABASE_PORT -U $DATABASE_USER; do echo waiting for database; sleep 2; done;"
+          envFrom:
+            - configMapRef:
+                name: {{ include "remnashop.fullname" . }}-config
       containers:
         - name: scheduler
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"

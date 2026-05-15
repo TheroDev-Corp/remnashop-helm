@@ -20,6 +20,16 @@ spec:
         app.kubernetes.io/component: taskiq-worker
     spec:
       terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - "until pg_isready -h $DATABASE_HOST -p $DATABASE_PORT -U $DATABASE_USER; do echo waiting for database; sleep 2; done;"
+          envFrom:
+            - configMapRef:
+                name: {{ include "remnashop.fullname" . }}-config
       containers:
         - name: worker
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"

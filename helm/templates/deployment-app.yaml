@@ -20,9 +20,17 @@ spec:
         app.kubernetes.io/component: main-app
     spec:
       initContainers:
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - "until pg_isready -h $DATABASE_HOST -p $DATABASE_PORT -U $DATABASE_USER; do echo waiting for database; sleep 2; done;"
+          envFrom:
+            - configMapRef:
+                name: {{ include "remnashop.fullname" . }}-config
         - name: init-assets
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
-          # Копируем ассеты только если папка пуста
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -39,12 +47,10 @@ spec:
         - name: app
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
           imagePullPolicy: {{ .Values.app.image.pullPolicy }}
-          # Жестко указываем старт uvicorn
           command: ["uvicorn", "src.__main__:application", "--host", "0.0.0.0", "--port", "5000", "--factory"]
           ports:
             - name: http
               containerPort: 5000
-          # LivenessProbe
           livenessProbe:
             tcpSocket:
               port: http
