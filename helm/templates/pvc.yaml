@@ -5,6 +5,8 @@ metadata:
   name: {{ include "remnashop.fullname" . }}-assets
   labels:
     {{- include "remnashop.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   accessModes:
     - {{ .Values.assets.persistence.accessMode | default "ReadWriteOnce" }}
