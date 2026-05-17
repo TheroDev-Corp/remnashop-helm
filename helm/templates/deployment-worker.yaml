@@ -5,6 +5,8 @@ metadata:
   labels:
     {{- include "remnashop.labels" . | nindent 4 }}
     app.kubernetes.io/component: taskiq-worker
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: {{ .Values.worker.replicaCount }}
   selector:

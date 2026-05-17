@@ -5,6 +5,8 @@ metadata:
   labels:
     {{- include "remnashop.labels" . | nindent 4 }}
     app.kubernetes.io/component: main-app
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: {{ .Values.app.replicaCount }}
   selector:
