@@ -18,6 +18,7 @@ from .handlers import (
     on_color_select,
     on_confirm,
     on_payload_input,
+    on_subscribers_only_toggle,
     on_text_input,
     on_type_select,
 )
@@ -62,6 +63,16 @@ button = Window(
             text=I18nFormat("btn-menu-editor.active-toggle", is_active=F["is_active"]),
             id="active_toggle",
             on_click=on_active_toggle,
+        ),
+    ),
+    Row(
+        Button(
+            text=I18nFormat(
+                "btn-menu-editor.subscribers-only-toggle",
+                subscribers_only=F["subscribers_only"],
+            ),
+            id="subscribers_only_toggle",
+            on_click=on_subscribers_only_toggle,
         ),
     ),
     Row(

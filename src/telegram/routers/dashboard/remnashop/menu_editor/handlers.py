@@ -63,6 +63,27 @@ async def on_active_toggle(
 
 
 @inject
+async def on_subscribers_only_toggle(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    retort: FromDishka[Retort],
+) -> None:
+    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    button = dialog_manager.dialog_data["button"]
+    button = retort.load(button, MenuButtonDto)
+
+    old_value = button.subscribers_only
+    button.subscribers_only = not button.subscribers_only
+    dialog_manager.dialog_data["button"] = retort.dump(button)
+
+    logger.info(
+        f"{user.log} Updated menu button '{button.index}' "
+        f"subscribers_only from '{old_value}' to '{button.subscribers_only}'"
+    )
+
+
+@inject
 async def on_text_input(
     message: Message,
     widget: MessageInput,

@@ -870,6 +870,10 @@ msg-menu-editor-button =
         }
     • <b>Текст</b>: { $text }
     • <b>Доступ</b>: { role }
+    • <b>Видимость</b>: { $subscribers_only ->
+        [1] 🔒 Только подписчики
+        *[0] 👥 Все пользователи
+        }
     • <b>Тип</b>: { button-type }
     • <b>Цвет</b>: { $color ->
         [primary] Основной

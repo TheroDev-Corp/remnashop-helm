@@ -301,6 +301,11 @@ btn-menu-editor =
         *[0] 🔴 Выключена
     }
 
+    .subscribers-only-toggle = { $subscribers_only ->
+        [1] 🔒 Только подписчики
+        *[0] 👥 Все пользователи
+    }
+
 btn-gateway =
     .title = { gateway-type }
     .setting = { $field }

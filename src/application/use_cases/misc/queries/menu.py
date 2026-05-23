@@ -7,6 +7,7 @@ from src.application.common.policy import Permission
 from src.application.dto import MenuButtonDto, PlanDto, SubscriptionDto, UserDto
 from src.application.services import BotService
 from src.application.use_cases.user.queries.plans import GetAvailableTrial
+from src.core.enums import Role
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ class GetMenuData(Interactor[None, GetMenuDataResultDto]):
         self.get_available_trial = get_available_trial
 
     async def _execute(self, actor: UserDto, data: None) -> GetMenuDataResultDto:
-        current_subscription = await self.subscription_dao.get_current(actor.telegram_id)
+        current_subscription = await self.subscription_dao.get_current(actor.id)
 
         plan = None
         if actor.is_trial_available:
@@ -51,7 +52,13 @@ class GetMenuData(Interactor[None, GetMenuDataResultDto]):
 
         custom_buttons = []
         for button in settings.menu.buttons:
-            if button.is_active and actor.role.value >= button.required_role.value:
+            role_ok = actor.role.value >= button.required_role.value
+            sub_ok = (
+                not button.subscribers_only
+                or actor.role > Role.USER
+                or (current_subscription is not None and current_subscription.is_active)
+            )
+            if button.is_active and role_ok and sub_ok:
                 button.text = self.i18n.get(button.text)
                 custom_buttons.append(button)
 

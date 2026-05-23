@@ -170,6 +170,7 @@ class MenuButtonDto(TrackableMixin):
     media_type: Optional[MediaType] = None
     is_active: bool = False
     required_role: Role = Role.USER
+    subscribers_only: bool = False
 
 
 @dataclass(kw_only=True)
