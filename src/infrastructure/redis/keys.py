@@ -49,3 +49,8 @@ class SyncPanelRunningKey(StorageKey, prefix="sync_panel_running"): ...
 
 
 class SyncBotRunningKey(StorageKey, prefix="sync_bot_running"): ...
+
+
+@dataclass(frozen=True)
+class RefreshTokenKey(StorageKey, prefix="refresh"):
+    token: str
