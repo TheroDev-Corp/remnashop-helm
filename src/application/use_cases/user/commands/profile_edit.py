@@ -1,12 +1,15 @@
 from dataclasses import dataclass
+from datetime import timedelta
 
 from loguru import logger
 
 from src.application.common import Cryptographer, Interactor
-from src.application.common.dao import UserDao
+from src.application.common.dao import SettingsDao, UserDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
+from src.core.exceptions import CooldownError
+from src.core.utils.time import datetime_now
 
 
 @dataclass(frozen=True)
@@ -148,3 +151,41 @@ class ResetUserReferralCode(Interactor[int, None]):
             await self.uow.commit()
 
         logger.info(f"{actor.log} Reset referral code for user '{user_id}'")
+
+
+class ResetOwnReferralCode(Interactor[None, None]):
+    required_permission = Permission.PUBLIC
+
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        user_dao: UserDao,
+        cryptographer: Cryptographer,
+        settings_dao: SettingsDao,
+    ) -> None:
+        self.uow = uow
+        self.user_dao = user_dao
+        self.cryptographer = cryptographer
+        self.settings_dao = settings_dao
+
+    async def _execute(self, actor: UserDto, data: None) -> None:
+        settings = await self.settings_dao.get()
+        extra = settings.extra.referral_reset
+
+        if not extra.enabled:
+            raise ValueError("Referral code reset is disabled")
+
+        if extra.cooldown_hours > 0 and actor.referral_code_reset_at:
+            available_at = actor.referral_code_reset_at + timedelta(hours=extra.cooldown_hours)
+            if datetime_now() < available_at:
+                raise CooldownError(available_at)
+
+        async with self.uow:
+            actor.referral_code = await self.cryptographer.generate_unique_code(
+                self.user_dao.get_by_referral_code
+            )
+            actor.referral_code_reset_at = datetime_now()
+            await self.user_dao.update(actor)
+            await self.uow.commit()
+
+        logger.info(f"{actor.log} Reset own referral code")

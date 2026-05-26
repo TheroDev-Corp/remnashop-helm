@@ -12,6 +12,7 @@ from .commands.blocking import (
 from .commands.messaging import SendMessageToUser
 from .commands.profile_edit import (
     ChangeUserPoints,
+    ResetOwnReferralCode,
     ResetUserReferralCode,
     SetUserPersonalDiscount,
     SetUserPurchaseDiscount,
@@ -43,6 +44,7 @@ USER_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     SetUserPurchaseDiscount,
     ToggleUserTrialAvailable,
     ChangeUserPoints,
+    ResetOwnReferralCode,
     ResetUserReferralCode,
     SendMessageToUser,
     GetAvailableTrial,

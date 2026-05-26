@@ -67,6 +67,10 @@ class SubscriptionDto(BaseDto, TrackableMixin, TimestampMixin):
 
     plan_snapshot: "PlanSnapshotDto"
 
+    device_single_reset_at: Optional[datetime] = None
+    device_all_reset_at: Optional[datetime] = None
+    link_reset_at: Optional[datetime] = None
+
     @property
     def is_active(self) -> bool:
         return self.current_status == SubscriptionStatus.ACTIVE

@@ -44,6 +44,7 @@ class Permission(UpperStrEnum):
     VIEW_AUDIT = auto()
     VIEW_MENU_EDITOR = auto()
     VIEW_BACKUP = auto()
+    VIEW_EXTRA_SETTINGS = auto()
     VIEW_BLACKLIST = auto()
     #
     SETTINGS_REFERRAL = auto()
@@ -53,6 +54,7 @@ class Permission(UpperStrEnum):
     SETTINGS_MENU = auto()
     SETTINGS_CURRENCY = auto()
     SETTINGS_BACKUP = auto()
+    SETTINGS_EXTRA = auto()
     #
     REMNASHOP_GATEWAYS = auto()
     REMNASHOP_PLAN_EDITOR = auto()

@@ -10,6 +10,7 @@ from .commands.backup import (
     UpdateBackupMaxFiles,
 )
 from .commands.currency import UpdateDefaultCurrency
+from .commands.extra import ToggleResetFeature, UpdateResetCooldown
 from .commands.notifications import ToggleNotification, UpdateSystemNotificationRoute
 from .commands.referral import (
     ToggleReferralSystem,
@@ -45,4 +46,6 @@ SETTINGS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     ToggleBackupSendToChat,
     UpdateBackupInterval,
     UpdateBackupMaxFiles,
+    ToggleResetFeature,
+    UpdateResetCooldown,
 )

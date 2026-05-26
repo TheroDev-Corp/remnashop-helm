@@ -51,6 +51,10 @@ class User(BaseSql, TimestampMixin):
         index=True,
     )
 
+    referral_code_reset_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     current_subscription_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("subscriptions.id", ondelete="SET NULL"),
         index=True,

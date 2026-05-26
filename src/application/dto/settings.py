@@ -202,6 +202,20 @@ class BlacklistSettingsDto(TrackableMixin):
 
 
 @dataclass(kw_only=True)
+class ResetFeatureSettingsDto(TrackableMixin):
+    enabled: bool = True
+    cooldown_hours: int = 0
+
+
+@dataclass(kw_only=True)
+class ExtraSettingsDto(TrackableMixin):
+    device_single_reset: ResetFeatureSettingsDto = field(default_factory=ResetFeatureSettingsDto)
+    device_all_reset: ResetFeatureSettingsDto = field(default_factory=ResetFeatureSettingsDto)
+    link_reset: ResetFeatureSettingsDto = field(default_factory=ResetFeatureSettingsDto)
+    referral_reset: ResetFeatureSettingsDto = field(default_factory=ResetFeatureSettingsDto)
+
+
+@dataclass(kw_only=True)
 class SettingsDto(BaseDto, TrackableMixin, TimestampMixin):
     default_currency: Currency = Currency.XTR
     access: AccessSettingsDto = field(default_factory=AccessSettingsDto)
@@ -211,3 +225,4 @@ class SettingsDto(BaseDto, TrackableMixin, TimestampMixin):
     menu: MenuSettingsDto = field(default_factory=MenuSettingsDto)
     backup: BackupSettingsDto = field(default_factory=BackupSettingsDto)
     blacklist: BlacklistSettingsDto = field(default_factory=BlacklistSettingsDto)
+    extra: ExtraSettingsDto = field(default_factory=ExtraSettingsDto)

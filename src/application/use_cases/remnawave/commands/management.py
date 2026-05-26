@@ -1,13 +1,17 @@
 from dataclasses import dataclass
+from datetime import timedelta
 
 from loguru import logger
 from remnapy import RemnawaveSDK
 
 from src.application.common import Interactor
-from src.application.common.dao import SubscriptionDao, UserDao
+from src.application.common.dao import SettingsDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.common.remnawave import Remnawave
+from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
+from src.core.exceptions import CooldownError
+from src.core.utils.time import datetime_now
 
 
 @dataclass(frozen=True)
@@ -19,22 +23,45 @@ class DeleteUserDeviceDto:
 class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
     required_permission = Permission.PUBLIC
 
-    def __init__(self, subscription_dao: SubscriptionDao, remnawave: Remnawave) -> None:
+    def __init__(
+        self,
+        subscription_dao: SubscriptionDao,
+        remnawave: Remnawave,
+        settings_dao: SettingsDao,
+        uow: UnitOfWork,
+    ) -> None:
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
+        self.settings_dao = settings_dao
+        self.uow = uow
 
     async def _execute(self, actor: UserDto, data: DeleteUserDeviceDto) -> bool:
-        current_subscription = await self.subscription_dao.get_current(data.user_id)
+        settings = await self.settings_dao.get()
+        extra = settings.extra.device_single_reset
 
+        if not extra.enabled:
+            raise ValueError("Single device reset is disabled")
+
+        current_subscription = await self.subscription_dao.get_current(data.user_id)
         if not current_subscription:
             raise ValueError(f"Subscription for user_id '{data.user_id}' not found")
 
-        remaining_devices = await self.remnawave.delete_device(
-            current_subscription.user_remna_id,
-            data.hwid,
-        )
+        if extra.cooldown_hours > 0 and current_subscription.device_single_reset_at:
+            available_at = current_subscription.device_single_reset_at + timedelta(
+                hours=extra.cooldown_hours
+            )
+            if datetime_now() < available_at:
+                raise CooldownError(available_at)
 
-        await self.remnawave.drop_connections(current_subscription.user_remna_id)
+        async with self.uow:
+            remaining_devices = await self.remnawave.delete_device(
+                current_subscription.user_remna_id,
+                data.hwid,
+            )
+            await self.remnawave.drop_connections(current_subscription.user_remna_id)
+            current_subscription.device_single_reset_at = datetime_now()
+            await self.subscription_dao.update(current_subscription)
+            await self.uow.commit()
 
         logger.info(f"{actor.log} Deleted device '{data.hwid}' for user_id '{data.user_id}'")
         return bool(remaining_devices)
@@ -43,20 +70,44 @@ class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
 class DeleteUserAllDevices(Interactor[None, None]):
     required_permission = Permission.PUBLIC
 
-    def __init__(self, subscription_dao: SubscriptionDao, remnawave: Remnawave) -> None:
+    def __init__(
+        self,
+        subscription_dao: SubscriptionDao,
+        remnawave: Remnawave,
+        settings_dao: SettingsDao,
+        uow: UnitOfWork,
+    ) -> None:
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
+        self.settings_dao = settings_dao
+        self.uow = uow
 
     async def _execute(self, actor: UserDto, data: None) -> None:
-        current_subscription = await self.subscription_dao.get_current(actor.id)
+        settings = await self.settings_dao.get()
+        extra = settings.extra.device_all_reset
 
+        if not extra.enabled:
+            raise ValueError("All devices reset is disabled")
+
+        current_subscription = await self.subscription_dao.get_current(actor.id)
         if not current_subscription:
             raise ValueError(
                 f"User '{actor.remna_name}' has no active subscription or device limit unlimited"
             )
 
-        await self.remnawave.delete_all_devices(current_subscription.user_remna_id)
-        await self.remnawave.drop_connections(current_subscription.user_remna_id)
+        if extra.cooldown_hours > 0 and current_subscription.device_all_reset_at:
+            available_at = current_subscription.device_all_reset_at + timedelta(
+                hours=extra.cooldown_hours
+            )
+            if datetime_now() < available_at:
+                raise CooldownError(available_at)
+
+        async with self.uow:
+            await self.remnawave.delete_all_devices(current_subscription.user_remna_id)
+            await self.remnawave.drop_connections(current_subscription.user_remna_id)
+            current_subscription.device_all_reset_at = datetime_now()
+            await self.subscription_dao.update(current_subscription)
+            await self.uow.commit()
 
         logger.info(f"{actor.log} Deleted all devices and dropped connections")
 
@@ -97,17 +148,41 @@ class ResetUserTraffic(Interactor[int, None]):
 class ReissueSubscription(Interactor[None, None]):
     required_permission = Permission.PUBLIC
 
-    def __init__(self, subscription_dao: SubscriptionDao, remnawave: Remnawave) -> None:
+    def __init__(
+        self,
+        subscription_dao: SubscriptionDao,
+        remnawave: Remnawave,
+        settings_dao: SettingsDao,
+        uow: UnitOfWork,
+    ) -> None:
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
+        self.settings_dao = settings_dao
+        self.uow = uow
 
     async def _execute(self, actor: UserDto, data: None) -> None:
-        current_subscription = await self.subscription_dao.get_current(actor.id)
+        settings = await self.settings_dao.get()
+        extra = settings.extra.link_reset
 
+        if not extra.enabled:
+            raise ValueError("Subscription link reset is disabled")
+
+        current_subscription = await self.subscription_dao.get_current(actor.id)
         if not current_subscription:
             raise ValueError(f"No active subscription for user '{actor.remna_name}'")
 
-        await self.remnawave.revoke_subscription(current_subscription.user_remna_id)
+        if extra.cooldown_hours > 0 and current_subscription.link_reset_at:
+            available_at = current_subscription.link_reset_at + timedelta(
+                hours=extra.cooldown_hours
+            )
+            if datetime_now() < available_at:
+                raise CooldownError(available_at)
+
+        async with self.uow:
+            await self.remnawave.revoke_subscription(current_subscription.user_remna_id)
+            current_subscription.link_reset_at = datetime_now()
+            await self.subscription_dao.update(current_subscription)
+            await self.uow.commit()
 
         logger.info(f"{actor.log} Reissued subscription")
 
