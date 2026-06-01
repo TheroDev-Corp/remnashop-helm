@@ -15,6 +15,12 @@ from .base import BaseDto, TimestampMixin, TrackableMixin
 from .plan import PlanSnapshotDto
 
 
+@dataclass(frozen=True)
+class SquadInfoDto:
+    uuid: UUID
+    name: str
+
+
 @dataclass(kw_only=True)
 class RemnaSubscriptionDto:
     uuid: UUID

@@ -6,6 +6,7 @@ from uuid import UUID
 from remnapy.enums.users import TrafficLimitStrategy
 
 from src.core.enums import Currency, PlanAvailability, PlanType
+from src.core.exceptions import PriceNotFoundError
 
 from .base import BaseDto, TimestampMixin, TrackableMixin
 
@@ -105,7 +106,12 @@ class PlanDurationDto(BaseDto, TrackableMixin):
     prices: list["PlanPriceDto"] = field(default_factory=list)
 
     def get_price(self, currency: Currency) -> Decimal:
-        return next((p.price for p in self.prices if p.currency == currency))
+        price = next((p.price for p in self.prices if p.currency == currency), None)
+        if price is None:
+            raise PriceNotFoundError(
+                f"No price for currency '{currency}' in duration '{self.days}'"
+            )
+        return price
 
 
 @dataclass(kw_only=True)

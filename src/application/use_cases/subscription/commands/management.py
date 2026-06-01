@@ -37,7 +37,10 @@ class ToggleSubscriptionStatus(Interactor[int, SubscriptionStatus]):
         if not subscription:
             raise ValueError(f"Subscription for user '{user_id}' not found")
 
-        is_now_active = not subscription.is_active
+        # Decide by stored status, not by computed is_active: EXPIRED (status=ACTIVE,
+        # but past expire_at) must not be treated as "disabled" and toggled on.
+        is_currently_enabled = subscription.status == SubscriptionStatus.ACTIVE
+        is_now_active = not is_currently_enabled
         new_status = SubscriptionStatus.ACTIVE if is_now_active else SubscriptionStatus.DISABLED
 
         async with self.uow:

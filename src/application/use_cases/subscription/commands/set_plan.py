@@ -54,6 +54,10 @@ class SetUserSubscription(Interactor[SetUserSubscriptionDto, None]):
                     plan=plan_snapshot,
                     reset_traffic=True,
                 )
+                await self.subscription_dao.update_status(
+                    subscription_id=subscription.id,
+                    status=SubscriptionStatus.DELETED,
+                )
             else:
                 remna_user = await self.remnawave.create_user(user=target_user, plan=plan_snapshot)
 

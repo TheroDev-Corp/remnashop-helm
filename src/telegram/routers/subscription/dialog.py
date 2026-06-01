@@ -1,5 +1,6 @@
 from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, Window
+from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
@@ -28,6 +29,7 @@ from .handlers import (
     on_plan_select,
     on_subscription_plans,
 )
+from .promocode_handlers import getter_promocode, on_promocode_confirm, on_promocode_input
 
 subscription = Window(
     Banner(BannerName.SUBSCRIPTION),
@@ -52,14 +54,13 @@ subscription = Window(
             when=F["has_active_subscription"],
         ),
     ),
-    # Row(
-    #     Button(
-    #         text=I18nFormat("btn-subscription.promocode"),
-    #         id=f"{PAYMENT_PREFIX}promocode",
-    #         on_click=show_dev_popup,
-    #         # state=Subscription.PROMOCODE,
-    #     ),
-    # ),
+    Row(
+        Button(
+            text=I18nFormat("btn-subscription.promocode"),
+            id="goto_promocode",
+            on_click=lambda c, w, m: m.switch_to(Subscription.PROMOCODE),
+        ),
+    ),
     *back_main_menu_button,
     IgnoreUpdate(),
     state=Subscription.MAIN,
@@ -267,8 +268,30 @@ failed = Window(
     state=Subscription.FAILED,
 )
 
+promocode_window = Window(
+    Banner(BannerName.PROMOCODE),
+    I18nFormat("msg-promocode-input"),
+    MessageInput(on_promocode_input),
+    Row(
+        Button(
+            text=I18nFormat("btn-promocode.confirm"),
+            id="confirm_promo",
+            on_click=on_promocode_confirm,
+            when=F["has_promo"],
+        ),
+    ),
+    SwitchTo(
+        text=I18nFormat("btn-back.general"),
+        id="back_main",
+        state=Subscription.MAIN,
+    ),
+    state=Subscription.PROMOCODE,
+    getter=getter_promocode,
+)
+
 router = Dialog(
     subscription,
+    promocode_window,
     plan,
     plans,
     duration,

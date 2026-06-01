@@ -241,3 +241,8 @@ class PlanDaoImpl(PlanDao):
         count = await self.session.scalar(stmt) or 0
         logger.debug(f"Counted '{count}' non-trial active plans")
         return count
+
+    async def set_order_index(self, plan_id: int, order_index: int) -> None:
+        stmt = update(Plan).where(Plan.id == plan_id).values(order_index=order_index)
+        await self.session.execute(stmt)
+        logger.debug(f"Plan '{plan_id}' order_index set to '{order_index}'")

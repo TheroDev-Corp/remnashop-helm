@@ -8,6 +8,7 @@ from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanDto, UserDto
 from src.core.exceptions import UserAlreadyAllowedError
+from src.core.utils.validators import is_valid_email
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,9 @@ class AddAllowedUserToPlan(Interactor[AddAllowedUserToPlanDto, PlanDto]):
         value = data.input_value.strip()
 
         if "@" in value:
+            if not is_valid_email(value):
+                logger.warning(f"{actor.log} Invalid email format: '{value}'")
+                raise ValueError(f"Invalid email format: '{value}'")
             if value in data.plan.allowed_emails:
                 logger.warning(f"{actor.log} Email '{value}' is already in allowed list")
                 raise UserAlreadyAllowedError(f"Email '{value}' already allowed")

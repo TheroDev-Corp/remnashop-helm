@@ -21,7 +21,7 @@ from src.application.use_cases.plan.commands.access import (
     AddAllowedUserToPlan,
     AddAllowedUserToPlanDto,
 )
-from src.application.use_cases.plan.commands.commit import CommitPlan
+from src.application.use_cases.plan.commands.commit import CommitPlan, CommitPlansBatch
 from src.application.use_cases.plan.commands.durations import (
     AddPlanDuration,
     AddPlanDurationDto,
@@ -50,6 +50,10 @@ from src.application.use_cases.plan.commands.order import (
     MoveDurationUpDto,
     MovePlanUp,
 )
+from src.application.use_cases.plan.commands.squads import (
+    SanitizePlanSquads,
+    SanitizePlanSquadsDto,
+)
 from src.application.use_cases.plan.exchange import ExportPlans, ParsePlansImport
 from src.application.use_cases.plan.queries.squads import CheckSquadsAvailable
 from src.core.constants import USER_KEY
@@ -75,7 +79,7 @@ async def on_import_input(
     retort: FromDishka[Retort],
     notifier: FromDishka[Notifier],
     parse_plans: FromDishka[ParsePlansImport],
-    commit_plan: FromDishka[CommitPlan],
+    commit_plans_batch: FromDishka[CommitPlansBatch],
 ) -> None:
     dialog_manager.show_mode = ShowMode.EDIT
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
@@ -101,8 +105,7 @@ async def on_import_input(
             await dialog_manager.switch_to(RemnashopPlans.CONFIGURATOR)
             return
 
-        for plan in plans:
-            await commit_plan(user, plan)
+        await commit_plans_batch(user, plans)
 
         await notifier.notify_user(user, MessagePayloadDto(i18n_key="ntf-plan.import-success"))
         await dialog_manager.switch_to(RemnashopPlans.MAIN)
@@ -348,6 +351,11 @@ async def on_tag_remove(
     logger.info(f"{user.log} Removed tag for plan ID '{plan.id}'")
 
 
+# NOTE: The following toggles/selects mutate an in-memory PlanDto draft kept in
+# dialog_data during the configuration stage. Nothing is persisted until CommitPlan,
+# so these trivial flag/enum flips are a deliberate exception to "no business logic in
+# handlers" — extracting them into use cases would add classes without value. Non-trivial
+# logic (validation, parsing, persistence) stays in use cases.
 @inject
 async def on_trial_toggle(
     callback: CallbackQuery,
@@ -706,6 +714,8 @@ async def on_squads(
     dialog_manager: DialogManager,
     notifier: FromDishka[Notifier],
     check_squads: FromDishka[CheckSquadsAvailable],
+    sanitize_squads: FromDishka[SanitizePlanSquads],
+    retort: FromDishka[Retort],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
 
@@ -713,6 +723,10 @@ async def on_squads(
         logger.warning(f"{user.log} Cancelled transition: squads list is empty")
         await notifier.notify_user(user, i18n_key="ntf-common.squads-empty")
         return
+
+    plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
+    sanitized = await sanitize_squads(user, SanitizePlanSquadsDto(plan=plan))
+    dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(sanitized)
 
     await dialog_manager.switch_to(state=RemnashopPlans.SQUADS)
 
@@ -770,6 +784,13 @@ async def on_plan_confirm(
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     plan_dto = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
+
+    # Guard against accidental double-submit (same as plan deletion): require an
+    # explicit second click within the cooldown before committing.
+    if not is_double_click(dialog_manager, key=f"plan_confirm_{plan_dto.id}", cooldown=10):
+        await notifier.notify_user(user, i18n_key="ntf-common.double-click-confirm")
+        logger.debug(f"{user.log} Clicked confirm for plan (awaiting confirmation)")
+        return
 
     try:
         result = await commit_plan(user, plan_dto)

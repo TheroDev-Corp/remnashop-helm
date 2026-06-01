@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from src.application.common import Cryptographer, Interactor
+from src.application.common import Interactor
 from src.application.common.dao import PlanDao
 from src.application.common.policy import Permission
 from src.application.dto import PlanDto, UserDto
@@ -22,25 +22,24 @@ class UpdatePlanNameDto:
 class UpdatePlanName(Interactor[UpdatePlanNameDto, PlanDto]):
     required_permission = Permission.REMNASHOP_PLAN_EDITOR
 
-    def __init__(self, plan_dao: PlanDao, cryptographer: Cryptographer) -> None:
+    def __init__(self, plan_dao: PlanDao) -> None:
         self.plan_dao = plan_dao
-        self.cryptographer = cryptographer
 
     async def _execute(self, actor: UserDto, data: UpdatePlanNameDto) -> PlanDto:
-        existing_plan = await self.plan_dao.get_by_name(data.input_name)
-
-        if existing_plan and existing_plan.id != data.plan.id:
-            logger.warning(f"{actor.log} Tried to set duplicate plan name '{data.input_name}'")
-            raise PlanNameAlreadyExistsError()
-
+        # Validate length before the duplicate check so a too-long name reports the
+        # length error (not a misleading "already exists").
         if len(data.input_name) > 32:
             logger.warning(f"{actor.log} Plan name '{data.input_name}' exceeds 32 characters")
             raise ValueError(f"Plan name must not exceed 32 characters, got {len(data.input_name)}")
 
+        existing_plan = await self.plan_dao.get_by_name(data.input_name)
+        if existing_plan and existing_plan.id != data.plan.id:
+            logger.warning(f"{actor.log} Tried to set duplicate plan name '{data.input_name}'")
+            raise PlanNameAlreadyExistsError()
+
+        # Keep public_code stable on rename — it is generated once at creation; shared
+        # links built from it must not be invalidated by a rename.
         data.plan.name = data.input_name
-        data.plan.public_code = await self.cryptographer.generate_unique_code(
-            self.plan_dao.get_by_public_code, length=8
-        )
         logger.info(f"{actor.log} Updated plan name in memory to '{data.input_name}'")
         return data.plan
 

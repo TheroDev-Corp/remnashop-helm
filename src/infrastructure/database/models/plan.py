@@ -29,8 +29,8 @@ class Plan(BaseSql, TimestampMixin):
     traffic_limit: Mapped[int]
     device_limit: Mapped[int]
 
-    allowed_telegram_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger))
-    allowed_emails: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    allowed_telegram_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger), server_default="{}")
+    allowed_emails: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default="{}")
     internal_squads: Mapped[list[UUID]]
     external_squad: Mapped[Optional[UUID]]
 
@@ -42,6 +42,7 @@ class Plan(BaseSql, TimestampMixin):
         back_populates="plan",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by="PlanDuration.order_index",
     )
 
 
