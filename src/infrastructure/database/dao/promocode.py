@@ -1,0 +1,139 @@
+from typing import Optional
+
+from adaptix.conversion import ConversionRetort
+from loguru import logger
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.application.common.dao import PromocodeDao
+from src.application.dto import PromocodeActivationDto, PromocodeDto
+from src.core.exceptions import PromocodeAlreadyActivatedError, PromocodeNotAvailableError
+from src.infrastructure.database.models.promocode import Promocode, PromocodeActivation
+
+
+class PromocodeDaoImpl(PromocodeDao):
+    def __init__(self, session: AsyncSession, conversion_retort: ConversionRetort) -> None:
+        self.session = session
+        self._to_dto = conversion_retort.get_converter(Promocode, PromocodeDto)
+        self._to_dto_list = conversion_retort.get_converter(list[Promocode], list[PromocodeDto])
+        self._act_to_dto = conversion_retort.get_converter(
+            PromocodeActivation, PromocodeActivationDto
+        )
+
+    async def create(self, promocode: PromocodeDto) -> PromocodeDto:
+        db = Promocode(
+            code=promocode.code.upper(),
+            is_active=promocode.is_active,
+            reward_type=promocode.reward_type,
+            reward=promocode.reward,
+            plan_snapshot=promocode.plan_snapshot,
+            availability=promocode.availability,
+            allowed_telegram_ids=promocode.allowed_telegram_ids,
+            lifetime=promocode.lifetime,
+            max_activations=promocode.max_activations,
+        )
+        self.session.add(db)
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            raise ValueError(f"Promocode with code '{promocode.code}' already exists")
+        logger.debug(f"Promocode '{promocode.code}' created with id={db.id}")
+        return self._to_dto(db)
+
+    async def update(self, promocode: PromocodeDto) -> Optional[PromocodeDto]:
+        db = await self.session.get(Promocode, promocode.id)
+        if not db:
+            logger.warning(f"Promocode id={promocode.id} not found for update")
+            return None
+        for key, value in promocode.changed_data.items():
+            if hasattr(db, key):
+                if key == "code":
+                    value = value.upper()
+                setattr(db, key, value)
+        await self.session.flush()
+        logger.debug(f"Promocode id={promocode.id} updated")
+        return self._to_dto(db)
+
+    async def delete(self, promocode_id: int) -> bool:
+        stmt = delete(Promocode).where(Promocode.id == promocode_id).returning(Promocode.id)
+        result = await self.session.execute(stmt)
+        deleted = result.scalar_one_or_none()
+        if deleted:
+            logger.debug(f"Promocode id={promocode_id} deleted")
+            return True
+        logger.debug(f"Promocode id={promocode_id} not found for deletion")
+        return False
+
+    async def get_by_id(self, promocode_id: int) -> Optional[PromocodeDto]:
+        db = await self.session.get(Promocode, promocode_id)
+        return self._to_dto(db) if db else None
+
+    async def get_by_code(self, code: str) -> Optional[PromocodeDto]:
+        stmt = select(Promocode).where(Promocode.code == code.upper())
+        db = await self.session.scalar(stmt)
+        return self._to_dto(db) if db else None
+
+    async def get_list(self, limit: int = 100, offset: int = 0) -> list[PromocodeDto]:
+        stmt = select(Promocode).order_by(Promocode.created_at.desc()).limit(limit).offset(offset)
+        result = await self.session.scalars(stmt)
+        return self._to_dto_list(list(result.all()))
+
+    async def get_count(self) -> int:
+        result = await self.session.scalar(select(func.count(Promocode.id)))
+        return result or 0
+
+    async def get_activations_count(self, promocode_id: int) -> int:
+        result = await self.session.scalar(
+            select(func.count(PromocodeActivation.id)).where(
+                PromocodeActivation.promocode_id == promocode_id
+            )
+        )
+        return result or 0
+
+    async def get_activation_by_user(
+        self, promocode_id: int, user_id: int
+    ) -> Optional[PromocodeActivationDto]:
+        stmt = select(PromocodeActivation).where(
+            PromocodeActivation.promocode_id == promocode_id,
+            PromocodeActivation.user_id == user_id,
+        )
+        db = await self.session.scalar(stmt)
+        return self._act_to_dto(db) if db else None
+
+    async def create_activation(
+        self, activation: PromocodeActivationDto, max_activations: Optional[int] = None
+    ) -> PromocodeActivationDto:
+        if max_activations is not None:
+            await self.session.execute(
+                select(Promocode.id)
+                .where(Promocode.id == activation.promocode_id)
+                .with_for_update()
+            )
+            count_result = await self.session.execute(
+                select(func.count(PromocodeActivation.id)).where(
+                    PromocodeActivation.promocode_id == activation.promocode_id
+                )
+            )
+            count = count_result.scalar() or 0
+            if count >= max_activations:
+                raise PromocodeNotAvailableError("Promocode activation limit reached")
+
+        db = PromocodeActivation(
+            promocode_id=activation.promocode_id,
+            user_id=activation.user_id,
+            activated_at=activation.activated_at,
+        )
+        self.session.add(db)
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            raise PromocodeAlreadyActivatedError(
+                f"Promocode '{activation.promocode_id}' already activated "
+                f"by user '{activation.user_id}'"
+            )
+        logger.debug(
+            f"PromocodeActivation created: promocode_id={activation.promocode_id}, "
+            f"user_id={activation.user_id}"
+        )
+        return self._act_to_dto(db)
