@@ -10,6 +10,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Refreshes the database collation version after a glibc upgrade caused a
+    # collation version mismatch (Postgres warns and may reject index operations).
+    # This writes directly to the pg_catalog system table, so it REQUIRES a
+    # superuser role; without those privileges the migration will fail with a
+    # permission error. Idempotent (sets datcollversion to NULL) and has no
+    # downgrade — the version is re-derived by Postgres on the next collation use.
     bind = op.get_bind()
     bind.execute(sa.text("SET allow_system_table_mods = on"))
     bind.execute(

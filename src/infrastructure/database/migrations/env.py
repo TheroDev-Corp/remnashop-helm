@@ -46,6 +46,8 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        compare_type=True,
+        compare_server_default=True,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         process_revision_directives=process_revision_directives,
@@ -61,6 +63,8 @@ def do_run_migrations(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
+        compare_type=True,
+        compare_server_default=True,
         process_revision_directives=process_revision_directives,
         crypt_key=app_config.crypt_key.get_secret_value(),
         owner_id=app_config.bot.owner_id,

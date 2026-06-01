@@ -31,7 +31,7 @@ class User(BaseSql, TimestampMixin):
     username: Mapped[Optional[str]] = mapped_column(String(32), index=True)
     referral_code: Mapped[str] = mapped_column(String(64), index=True, unique=True)
 
-    name: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String())
     role: Mapped[Role] = mapped_column(index=True)
     language: Mapped[Locale]
 
