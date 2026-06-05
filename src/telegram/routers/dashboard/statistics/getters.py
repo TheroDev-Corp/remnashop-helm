@@ -190,26 +190,11 @@ async def subscriptions_getter(
 async def promocodes_getter(
     dialog_manager: DialogManager,
     get_promocode_statistics: FromDishka[GetPromocodeStatistics],
-    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     data = await get_promocode_statistics(user)
-
-    top = (
-        "\n".join(
-            i18n.get(
-                "msg-statistics-promocodes-top-item",
-                index=i + 1,
-                code=item.code,
-                count=item.activations,
-            )
-            for i, item in enumerate(data.top)
-        )
-        or "-"
-    )
-
-    return {**asdict(data), "top": top}
+    return asdict(data)
 
 
 @inject

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
@@ -19,7 +19,6 @@ class CreatePromocodeDto:
     reward: Optional[int] = None
     plan_snapshot: Optional[dict] = None
     availability: PromocodeAvailability = PromocodeAvailability.ALL
-    allowed_telegram_ids: list[int] = field(default_factory=list)
     expires_at: Optional[datetime] = None
     max_activations: Optional[int] = None
 
@@ -76,7 +75,6 @@ class CreatePromocode(Interactor[CreatePromocodeDto, PromocodeDto]):
             reward=data.reward,
             plan_snapshot=data.plan_snapshot,
             availability=data.availability,
-            allowed_telegram_ids=data.allowed_telegram_ids,
             expires_at=data.expires_at,
             max_activations=data.max_activations,
         )

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
@@ -15,7 +15,6 @@ class PromocodeDto(BaseDto, TrackableMixin, TimestampMixin):
     reward: Optional[int] = None
     plan_snapshot: Optional[dict[str, Any]] = None
     availability: PromocodeAvailability = PromocodeAvailability.ALL
-    allowed_telegram_ids: list[int] = field(default_factory=list)
     expires_at: Optional[datetime] = None
     max_activations: Optional[int] = None
 

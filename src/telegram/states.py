@@ -65,7 +65,6 @@ class DashboardPromocodes(StatesGroup):
     PLAN_DURATION = State()
     EXPIRES = State()
     MAX_ACTIVATIONS = State()
-    ALLOWED = State()
 
 
 class DashboardAccess(StatesGroup):

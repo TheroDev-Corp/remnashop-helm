@@ -60,7 +60,7 @@ msg-menu-devices =
     [0] { empty }
     *[HAS] { $device_single_enabled ->
         [0] Для отвязки устройства обратитесь в техподдержку.
-        *[other] Нажмите на устройство чтобы удалить его.
+        *[OTHER] Нажмите на устройство чтобы удалить его.
         }
     }{ $max_count ->
     [0] { space }
@@ -288,11 +288,6 @@ msg-statistics-promocodes =
     • <b>Выдано личных скидок</b>: { $issued_personal_discounts }
     • <b>Выдано одноразовых скидок</b>: { $issued_purchase_discounts }
     </blockquote>
-
-    <b>🏆 Топ промокодов</b>
-    <blockquote>{ $top }</blockquote>
-
-msg-statistics-promocodes-top-item = { $index }. <code>{ $code }</code> — { $count }
 
 msg-statistics-referrals =
     <b>👪 Статистика по рефералам</b>
@@ -901,7 +896,7 @@ msg-extra-device-single =
     }
     <b>Кулдаун:</b> { $cooldown -> 
         [0] { unknown }
-        *[other] { $cooldown }ч
+        *[OTHER] { $cooldown }ч
     }
     </blockquote>
 
@@ -919,7 +914,7 @@ msg-extra-device-all =
     }
     <b>Кулдаун:</b> { $cooldown -> 
         [0] { unknown }
-        *[other] { $cooldown }ч
+        *[OTHER] { $cooldown }ч
     }
     </blockquote>
 
@@ -937,7 +932,7 @@ msg-extra-link-reset =
     }
     <b>Кулдаун:</b> { $cooldown -> 
         [0] { unknown }
-        *[other] { $cooldown }ч
+        *[OTHER] { $cooldown }ч
     }
     </blockquote>
 
@@ -955,7 +950,7 @@ msg-extra-referral-reset =
     }
     <b>Кулдаун:</b> { $cooldown -> 
         [0] { unknown }
-        *[other] { $cooldown }ч
+        *[OTHER] { $cooldown }ч
     }
     </blockquote>
 
@@ -1536,25 +1531,6 @@ msg-importer-sync-bot-completed =
 
 # Promocodes
 msg-promocodes-main = <b>🎟 Промокоды</b>
-frg-promocode-reward = { $promocode_type ->
-    [DURATION] { $reward ->
-        [0] { unlimited } дней
-        [one] { $reward } день
-        [few] { $reward } дня
-        *[more] { $reward } дней
-        } к текущей подписке
-    [TRAFFIC] { $reward } ГБ к текущей подписке
-    [DEVICES] { $reward ->
-        [0] { unlimited } устройств
-        [one] { $reward } устройство
-        [few] { $reward } устройства
-        *[more] { $reward } устройств
-        } к текущей подписке
-    [SUBSCRIPTION] подписка { $plan_name }
-    [PERSONAL_DISCOUNT] { $reward }% к персональной скидке
-    [PURCHASE_DISCOUNT] { $reward }% к скидке на следующую покупку
-    *[OTHER] { $reward }
-    }
 
 msg-promocode-configurator =
     <b>🎟 Конфигуратор промокода</b>
@@ -1654,11 +1630,6 @@ msg-promocode-input-max-activations =
 
     Введите максимальное количество активаций.
     Нажмите <b>Сбросить</b> для снятия ограничения.
-
-msg-promocode-allowed-ids =
-    <b>👥 Изменить список разрешённых пользователей</b>
-
-    Введите Telegram ID пользователя для добавления в список.
 
 msg-promocode-input =
     <b>🎟 Промокод</b>

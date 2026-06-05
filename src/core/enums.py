@@ -139,7 +139,6 @@ class PromocodeAvailability(UpperStrEnum):
     NEW = auto()
     EXISTING = auto()
     INVITED = auto()
-    ALLOWED = auto()
 
 
 class ReferralLevel(IntEnum):

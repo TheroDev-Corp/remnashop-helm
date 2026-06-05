@@ -160,21 +160,6 @@ async def getter_availability_select(**kwargs: Any) -> dict[str, Any]:
 
 
 @inject
-async def getter_allowed(
-    dialog_manager: DialogManager,
-    retort: FromDishka[Retort],
-    **kwargs: Any,
-) -> dict[str, Any]:
-    raw = dialog_manager.dialog_data.get(PromocodeDto.__name__)
-    if not raw:
-        return {"allowed_ids": []}
-    promo = retort.load(raw, PromocodeDto)
-    return {
-        "allowed_ids": promo.allowed_telegram_ids,
-    }
-
-
-@inject
 async def getter_code(
     dialog_manager: DialogManager,
     retort: FromDishka[Retort],

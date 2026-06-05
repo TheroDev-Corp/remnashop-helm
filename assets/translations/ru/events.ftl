@@ -203,7 +203,7 @@ event-blacklist =
     .registration-attempt =
     #BlacklistRegistrationAttemptEvent
 
-    <b>🔅 Событие: Попытка регистрации из чёрного списка!</b>
+    <b>🔅 Событие: Попытка регистрации из черного списка!</b>
 
     { hdr-user }
     { frg-user-info }
@@ -308,7 +308,7 @@ event-subscription =
     .not-connected =
     <b>🔌 Не получилось подключиться?</b>
 
-    Если у вас возникли сложности с настройкой VPN — мы готовы помочь! Напишите в поддержку, и мы разберёмся вместе.
+    Если у вас возникли сложности с настройкой VPN — мы готовы помочь! Напишите в поддержку, и мы разберемся вместе.
 
     .revoked =
     #SubscriptionRevokedEvent
@@ -418,22 +418,24 @@ event-payment =
     .refunded =
     #PaymentRefundedEvent
 
-    <b>⚠️ Событие: Платёж возвращён!</b>
+    <b>⚠️ Событие: Платеж возвращен!</b>
 
-    <blockquote>
-    • <b>ID платежа</b>: <code>{ $payment_id }</code>
-    • <b>Пользователь</b>: <code>{ $user }</code>
-    </blockquote>
+    { hdr-payment }
+    { frg-payment-info }
+
+    { hdr-user }
+    { frg-user-info }
 
     Требуется ручная проверка — подписка пользователя могла остаться активной.
 
     .referral-failed =
     <b>⚠️ Не удалось начислить реферальную награду</b>
 
-    <blockquote>
-    • <b>ID платежа</b>: <code>{ $payment_id }</code>
-    • <b>Пользователь</b>: <code>{ $user }</code>
-    </blockquote>
+    { hdr-payment }
+    { frg-payment-info }
+
+    { hdr-user }
+    { frg-user-info }
 
     Покупка завершена успешно, но при начислении реферальной награды произошла ошибка. Требуется ручная проверка.
 

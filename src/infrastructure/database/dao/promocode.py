@@ -12,7 +12,6 @@ from src.application.dto import (
     PromocodeActivationDto,
     PromocodeDto,
     PromocodeStatisticsDto,
-    PromocodeTopDto,
 )
 from src.core.enums import PromocodeRewardType
 from src.core.exceptions import PromocodeAlreadyActivatedError, PromocodeNotAvailableError
@@ -37,7 +36,6 @@ class PromocodeDaoImpl(PromocodeDao):
             reward=promocode.reward,
             plan_snapshot=promocode.plan_snapshot,
             availability=promocode.availability,
-            allowed_telegram_ids=promocode.allowed_telegram_ids,
             expires_at=promocode.expires_at,
             max_activations=promocode.max_activations,
         )
@@ -156,23 +154,6 @@ class PromocodeDaoImpl(PromocodeDao):
             counts[row["reward_type"]] = int(row["count"] or 0)
             reward_sums[row["reward_type"]] = int(row["reward_sum"] or 0)
 
-        top_rows = (
-            (
-                await self.session.execute(
-                    select(
-                        Promocode.code,
-                        func.count(PromocodeActivation.id).label("activations"),
-                    )
-                    .join(PromocodeActivation, PromocodeActivation.promocode_id == Promocode.id)
-                    .group_by(Promocode.id)
-                    .order_by(func.count(PromocodeActivation.id).desc())
-                    .limit(5)
-                )
-            )
-            .mappings()
-            .all()
-        )
-
         return PromocodeStatisticsDto(
             total_promocodes=int(promo_counts["total"] or 0),
             active_promocodes=int(promo_counts["active"] or 0),
@@ -186,10 +167,6 @@ class PromocodeDaoImpl(PromocodeDao):
             issued_subscriptions=counts.get(PromocodeRewardType.SUBSCRIPTION, 0),
             issued_personal_discounts=counts.get(PromocodeRewardType.PERSONAL_DISCOUNT, 0),
             issued_purchase_discounts=counts.get(PromocodeRewardType.PURCHASE_DISCOUNT, 0),
-            top=[
-                PromocodeTopDto(code=row["code"], activations=int(row["activations"]))
-                for row in top_rows
-            ],
         )
 
     async def get_activation_by_user(

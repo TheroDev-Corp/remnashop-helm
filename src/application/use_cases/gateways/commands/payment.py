@@ -359,7 +359,15 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
                         i18n_key="event-payment.refunded",
                         i18n_kwargs={
                             "payment_id": str(payment_id),
-                            "user": user.remna_name,
+                            "gateway_type": transaction.gateway_type,
+                            "final_amount": transaction.pricing.final_amount,
+                            "original_amount": transaction.pricing.original_amount,
+                            "discount_percent": transaction.pricing.discount_percent,
+                            "currency": transaction.currency.symbol,
+                            "telegram_id": user.telegram_id or 0,
+                            "username": user.username or 0,
+                            "name": user.name,
+                            "email": user.email,
                         },
                     )
                 )
@@ -459,7 +467,15 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
                         i18n_key="event-payment.referral-failed",
                         i18n_kwargs={
                             "payment_id": str(transaction.payment_id),
-                            "user": user.remna_name,
+                            "gateway_type": transaction.gateway_type,
+                            "final_amount": transaction.pricing.final_amount,
+                            "original_amount": transaction.pricing.original_amount,
+                            "discount_percent": transaction.pricing.discount_percent,
+                            "currency": transaction.currency.symbol,
+                            "telegram_id": user.telegram_id or 0,
+                            "username": user.username or 0,
+                            "name": user.name,
+                            "email": user.email,
                         },
                     )
                 )

@@ -128,7 +128,6 @@ async def on_promo_confirm(
                     reward=promo.reward,
                     plan_snapshot=promo.plan_snapshot,
                     availability=promo.availability,
-                    allowed_telegram_ids=promo.allowed_telegram_ids,
                     expires_at=promo.expires_at,
                     max_activations=promo.max_activations,
                 ),
@@ -308,43 +307,6 @@ async def on_availability_select(
     promo.availability = availability
     _save(dialog_manager, retort, promo)
     await dialog_manager.switch_to(DashboardPromocodes.CONFIGURATOR)
-
-
-@inject
-async def on_allowed_id_input(
-    message: Message,
-    widget: MessageInput,
-    dialog_manager: DialogManager,
-    retort: FromDishka[Retort],
-    notifier: FromDishka[Notifier],
-) -> None:
-    dialog_manager.show_mode = ShowMode.EDIT
-    user = dialog_manager.middleware_data[USER_KEY]
-    id_text = (message.text or "").strip()
-    if not id_text.isdigit():
-        await notifier.notify_user(user, i18n_key="ntf-promocode.reward-invalid")
-        return
-    promo = _load(dialog_manager, retort)
-    telegram_id = int(id_text)
-    if telegram_id not in promo.allowed_telegram_ids:
-        promo.allowed_telegram_ids = [*promo.allowed_telegram_ids, telegram_id]
-    _save(dialog_manager, retort, promo)
-
-
-@inject
-async def on_allowed_id_remove(
-    callback: CallbackQuery,
-    widget: Button,
-    dialog_manager: DialogManager,
-    retort: FromDishka[Retort],
-) -> None:
-    promo = _load(dialog_manager, retort)
-    promo.allowed_telegram_ids = [
-        i
-        for i in promo.allowed_telegram_ids
-        if str(i) != str(dialog_manager.item_id)  # type: ignore[attr-defined]
-    ]
-    _save(dialog_manager, retort, promo)
 
 
 def _parse_expires_at(text: str, created_at: Optional[datetime]) -> Optional[datetime]:

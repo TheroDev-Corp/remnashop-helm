@@ -22,7 +22,7 @@ def upgrade() -> None:
 
     op.execute("""
         CREATE TYPE promocode_availability AS ENUM (
-            'ALL', 'NEW', 'EXISTING', 'INVITED', 'ALLOWED'
+            'ALL', 'NEW', 'EXISTING', 'INVITED'
         )
     """)
 
@@ -42,12 +42,6 @@ def upgrade() -> None:
             "availability",
             postgresql.ENUM(name="promocode_availability", create_type=False),
             nullable=False,
-        ),
-        sa.Column(
-            "allowed_telegram_ids",
-            sa.ARRAY(sa.BigInteger()),
-            nullable=False,
-            server_default="{}",
         ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("max_activations", sa.Integer(), nullable=True),

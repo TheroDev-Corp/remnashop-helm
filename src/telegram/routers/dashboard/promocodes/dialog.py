@@ -5,14 +5,13 @@ from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
-from src.core.enums import BannerName, PromocodeAvailability
+from src.core.enums import BannerName
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import Dashboard, DashboardPromocodes
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import Button, ListGroup, Row, Start, SwitchTo
 
 from .getters import (
-    getter_allowed,
     getter_availability_select,
     getter_code,
     getter_configurator,
@@ -25,8 +24,6 @@ from .getters import (
     getter_type_select,
 )
 from .handlers import (
-    on_allowed_id_input,
-    on_allowed_id_remove,
     on_availability_select,
     on_code_input,
     on_code_regenerate,
@@ -154,14 +151,6 @@ configurator = Window(
             text=I18nFormat("btn-promocodes.max-activations"),
             id="max_activations",
             state=DashboardPromocodes.MAX_ACTIVATIONS,
-        ),
-    ),
-    Row(
-        SwitchTo(
-            text=I18nFormat("btn-promocodes.allowed"),
-            id="allowed",
-            state=DashboardPromocodes.ALLOWED,
-            when=F["availability"] == PromocodeAvailability.ALLOWED.value,
         ),
     ),
     Row(
@@ -349,34 +338,6 @@ availability_select = Window(
     getter=getter_availability_select,
 )
 
-allowed_ids = Window(
-    Banner(BannerName.DASHBOARD),
-    I18nFormat("msg-promocode-allowed-ids"),
-    ListGroup(
-        Row(
-            Button(
-                text=Format("{item} ❌"),
-                id="remove_id",
-                on_click=on_allowed_id_remove,
-            ),
-        ),
-        id="allowed_ids_list",
-        item_id_getter=lambda item: item,
-        items="allowed_ids",
-    ),
-    Row(
-        SwitchTo(
-            text=I18nFormat("btn-back.general"),
-            id="back",
-            state=DashboardPromocodes.CONFIGURATOR,
-        ),
-    ),
-    MessageInput(func=on_allowed_id_input),
-    IgnoreUpdate(),
-    state=DashboardPromocodes.ALLOWED,
-    getter=getter_allowed,
-)
-
 expires_input = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-promocode-input-expires"),
@@ -434,7 +395,6 @@ router = Dialog(
     plan_select,
     plan_duration_select,
     availability_select,
-    allowed_ids,
     expires_input,
     max_activations_input,
 )

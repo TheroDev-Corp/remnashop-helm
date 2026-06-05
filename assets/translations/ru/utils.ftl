@@ -204,6 +204,26 @@ frg-build-info =
     </blockquote>
     }
 
+frg-promocode-reward = { $promocode_type ->
+    [DURATION] { $reward ->
+        [0] { unlimited } дней
+        [one] { $reward } день
+        [few] { $reward } дня
+        *[more] { $reward } дней
+        } к текущей подписке
+    [TRAFFIC] { $reward } ГБ к текущей подписке
+    [DEVICES] { $reward ->
+        [0] { unlimited } устройств
+        [one] { $reward } устройство
+        [few] { $reward } устройства
+        *[more] { $reward } устройств
+        } к текущей подписке
+    [SUBSCRIPTION] подписка { $plan_name }
+    [PERSONAL_DISCOUNT] { $reward }% к персональной скидке
+    [PURCHASE_DISCOUNT] { $reward }% к скидке на следующую покупку
+    *[OTHER] { $reward }
+    }
+
 role-owner = Владелец
 role-dev = Разработчик
 role-admin = Администратор
@@ -433,7 +453,7 @@ notification-type = { $notification_type ->
     [USER_DEVICES_UPDATED] Устройства пользователя
     [USER_REVOKED_SUBSCRIPTION] Сброс подписки
     [NOT_CONNECTED] Нет подключения
-    [BLACKLIST_ATTEMPT] Попытка входа из чёрного списка
+    [BLACKLIST_ATTEMPT] Регистрация пользователя (из ЧС)
     *[OTHER] { $notification_type }
     }
 

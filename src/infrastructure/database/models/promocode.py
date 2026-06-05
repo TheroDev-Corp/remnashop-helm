@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import ARRAY, BigInteger, DateTime, ForeignKey, Integer, UniqueConstraint, text
+from sqlalchemy import DateTime, ForeignKey, Integer, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,9 +23,6 @@ class Promocode(BaseSql, TimestampMixin):
     plan_snapshot: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
     availability: Mapped[PromocodeAvailability]
-    allowed_telegram_ids: Mapped[list[int]] = mapped_column(
-        ARRAY(BigInteger), nullable=False, server_default="{}"
-    )
 
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     max_activations: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

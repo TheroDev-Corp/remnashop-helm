@@ -100,8 +100,3 @@ class ValidatePromocode(Interactor[ValidatePromocodeDto, PromocodeDto]):
                 is_invited = await self.user_dao.is_invited_user(user.id)
                 if not is_invited:
                     raise PromocodeNotAvailableError("Promocode is for invited users only")
-
-            case PromocodeAvailability.ALLOWED:
-                allowed = promo.allowed_telegram_ids
-                if user.telegram_id is None or user.telegram_id not in allowed:
-                    raise PromocodeNotAvailableError("User not in allowed list")

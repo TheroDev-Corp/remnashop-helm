@@ -257,8 +257,7 @@ btn-promocodes =
     .availability = ✴️ Доступ
     .reward = 🎁 Награда
     .plan = 📦 План
-    .expires = ⌛ Действует до
-    .allowed = 👥 Разрешенные пользователи
+    .expires = ⌛ Срок действия
     .max-activations = 🔢 Лимит активаций
     .reset = 🔄 Сбросить
 

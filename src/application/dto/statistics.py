@@ -80,12 +80,6 @@ class PlanIncomeDto:
 
 
 @dataclass(frozen=True)
-class PromocodeTopDto:
-    code: str
-    activations: int
-
-
-@dataclass(frozen=True)
 class PromocodeStatisticsDto:
     total_promocodes: int
     active_promocodes: int
@@ -99,7 +93,6 @@ class PromocodeStatisticsDto:
     issued_subscriptions: int
     issued_personal_discounts: int
     issued_purchase_discounts: int
-    top: list[PromocodeTopDto]
 
 
 @dataclass(frozen=True)
