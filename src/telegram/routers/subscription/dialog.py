@@ -28,6 +28,7 @@ from .handlers import (
     on_payment_method_select,
     on_plan_select,
     on_subscription_plans,
+    on_subscription_start,
 )
 from .promocode_handlers import getter_promocode, on_promocode_confirm, on_promocode_input
 
@@ -309,4 +310,5 @@ router = Dialog(
     success_payment,
     success_trial,
     failed,
+    on_start=on_subscription_start,
 )
