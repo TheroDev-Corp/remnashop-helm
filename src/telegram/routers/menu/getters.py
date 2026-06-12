@@ -86,7 +86,7 @@ async def menu_getter(
                 currency = settings.default_currency
                 raw_price = trial_plan.durations[0].get_price(currency)
                 trial_is_free = raw_price == 0
-                trial_price_str = f"{raw_price.normalize()} {currency.symbol}" if not trial_is_free else ""
+                trial_price_str = f"{raw_price.normalize():f} {currency.symbol}" if not trial_is_free else ""
             data["trial_available"] = menu_data.is_trial_available and menu_data.available_trial
             data["trial_is_free"] = trial_is_free
             data["trial_price"] = trial_price_str

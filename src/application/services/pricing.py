@@ -21,7 +21,13 @@ class PricingService:
         )
         return discount_percent
 
-    def calculate(self, user: UserDto, price: Decimal, currency: Currency) -> PriceDetailsDto:
+    def calculate(
+        self,
+        user: UserDto,
+        price: Decimal,
+        currency: Currency,
+        apply_discount: bool = True,
+    ) -> PriceDetailsDto:
         logger.debug(
             f"Calculating price for amount '{price}' and currency "
             f"'{currency}' for user '{user.remna_name}'"
@@ -35,7 +41,7 @@ class PricingService:
                 final_amount=Decimal(0),
             )
 
-        discount_percent = self.get_effective_discount(user)
+        discount_percent = self.get_effective_discount(user) if apply_discount else 0
 
         if discount_percent >= 100:
             logger.info(f"100% discount applied, price is free for user {user.log}")

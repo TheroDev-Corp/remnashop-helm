@@ -189,7 +189,9 @@ async def payment_method_getter(
     payment_methods = []
     for gateway in gateways:
         raw_price = duration.get_price(gateway.currency)
-        price = pricing_service.calculate(user, raw_price, gateway.currency)
+        price = pricing_service.calculate(
+            user, raw_price, gateway.currency, apply_discount=not plan.is_trial
+        )
         payment_methods.append(
             {
                 "gateway_type": gateway.type,
@@ -215,8 +217,10 @@ async def payment_method_getter(
         "final_amount": 0,
         "currency": "",
         "only_single_duration": only_single_duration,
-        "discount_percent": pricing_service.get_effective_discount(user),
-        "is_personal_discount": pricing_service.is_largest_discount_personal(user),
+        "discount_percent": 0 if plan.is_trial else pricing_service.get_effective_discount(user),
+        "is_personal_discount": (
+            False if plan.is_trial else pricing_service.is_largest_discount_personal(user)
+        ),
         "plan_is_modified": plan_is_modified,
     }
 
