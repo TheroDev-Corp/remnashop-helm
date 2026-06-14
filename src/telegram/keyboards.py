@@ -96,6 +96,12 @@ connect_buttons = (
         style=Style(ButtonStyle.PRIMARY),
     ),
     Url(
+        text=I18nFormat("btn-menu.connect-reserve"),
+        url=Format("{subscription_url}"),
+        id="connect_reserve",
+        when=F["is_mini_app_reserve"] & F["connectable"],
+    ),
+    Url(
         text=I18nFormat("btn-menu.connect"),
         url=Format("{connection_url}"),
         id="connect_sub_page",

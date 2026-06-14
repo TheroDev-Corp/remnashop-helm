@@ -65,6 +65,7 @@ btn-menu =
     .trial = 🎁 ПОПРОБОВАТЬ БЕСПЛАТНО
     .trial-paid = 🚀 ПОПРОБОВАТЬ ЗА { $trial_price }
     .connect = 🚀 Подключиться
+    .connect-reserve = 🔗 Подключиться (резерв)
     .devices = 📱 Устройства
     .subscription = 💳 Подписка
     .invite = 👥 Пригласить
@@ -346,6 +347,11 @@ btn-remnashop-extra =
         [1] 🟢
         *[0] 🔴
     } Авто отключение пробника
+
+    .mini-app-reserve = { $enabled ->
+        [1] 🟢
+        *[0] 🔴
+    } Резервная кнопка подключения
 
     .toggle = { $enabled ->
         [1] 🟢 Включено

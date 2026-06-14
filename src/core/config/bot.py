@@ -16,6 +16,7 @@ class BotConfig(BaseConfig, env_prefix="BOT_"):
     owner_id: int
     support_username: SecretStr
     mini_app: Union[bool, SecretStr] = False
+    mini_app_reserve: bool = False
     proxy_url: Optional[SecretStr] = None
 
     reset_webhook: bool = False
@@ -32,6 +33,10 @@ class BotConfig(BaseConfig, env_prefix="BOT_"):
         if isinstance(self.mini_app, bool):
             return self.mini_app
         return bool(self.mini_app_url)
+
+    @property
+    def is_mini_app_reserve(self) -> bool:
+        return self.is_mini_app and self.mini_app_reserve
 
     @property
     def mini_app_url(self) -> Union[bool, str]:

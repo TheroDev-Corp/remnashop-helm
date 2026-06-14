@@ -240,9 +240,7 @@ confirm = Window(
 success_payment = Window(
     Banner(BannerName.SUBSCRIPTION),
     I18nFormat("msg-subscription-success"),
-    Row(
-        *connect_buttons,
-    ),
+    *connect_buttons,
     *back_main_menu_button,
     IgnoreUpdate(),
     state=Subscription.SUCCESS,
@@ -252,9 +250,7 @@ success_payment = Window(
 success_trial = Window(
     Banner(BannerName.SUBSCRIPTION),
     I18nFormat("msg-subscription-trial"),
-    Row(
-        *connect_buttons,
-    ),
+    *connect_buttons,
     *back_main_menu_button,
     IgnoreUpdate(),
     state=Subscription.TRIAL,

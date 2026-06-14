@@ -312,7 +312,9 @@ async def getter_connect(
 
     return {
         "is_mini_app": config.bot.is_mini_app,
+        "is_mini_app_reserve": config.bot.is_mini_app_reserve,
         "connection_url": config.bot.mini_app_url or current_subscription.url,
+        "subscription_url": current_subscription.url,
         "connectable": True,
     }
 
@@ -340,6 +342,8 @@ async def success_payment_getter(
         "expire_time": i18n_format_expire_time(subscription.expire_at),
         "added_duration": i18n_format_days(subscription.plan_snapshot.duration),
         "is_mini_app": config.bot.is_mini_app,
+        "is_mini_app_reserve": config.bot.is_mini_app_reserve,
         "connection_url": config.bot.mini_app_url or subscription.url,
+        "subscription_url": subscription.url,
         "connectable": True,
     }
