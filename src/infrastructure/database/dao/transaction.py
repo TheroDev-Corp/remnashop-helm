@@ -218,7 +218,9 @@ class TransactionDaoImpl(TransactionDao):
     async def get_gateway_stats(self) -> list[GatewayStatsDto]:
         now = datetime_now()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_ago = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        week_ago = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         month_ago = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         last_month_end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         last_month_start = (last_month_end - timedelta(days=1)).replace(day=1)
