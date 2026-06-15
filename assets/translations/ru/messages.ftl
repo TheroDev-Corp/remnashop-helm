@@ -1433,11 +1433,12 @@ msg-subscription-details =
     { $discount_percent ->
     [0] { empty }
     *[HAS]
-    <blockquote><i>Цены указаны с учетом { $is_personal_discount ->
+    <blockquote>
+    <i>Цены указаны с учетом { $is_personal_discount ->
         [1] вашей персональной скидки { $discount_percent }%
         *[0] разовой скидки { $discount_percent }%
-        }
-        </i></blockquote>
+        }</i>
+    </blockquote>
     }
 
 msg-subscription-duration =
