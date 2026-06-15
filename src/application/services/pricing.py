@@ -2,7 +2,7 @@ from decimal import ROUND_DOWN, Decimal, InvalidOperation
 
 from loguru import logger
 
-from src.application.dto import PriceDetailsDto, UserDto
+from src.application.dto import PlanDurationDto, PriceDetailsDto, UserDto
 from src.core.enums import Currency
 
 
@@ -66,6 +66,27 @@ class PricingService:
             original_amount=price,
             discount_percent=discount_percent,
             final_amount=final_amount,
+        )
+
+    def calculate_for_duration(
+        self,
+        user: UserDto,
+        duration: PlanDurationDto,
+        currency: Currency,
+        apply_discount: bool = True,
+    ) -> PriceDetailsDto:
+        discount = self.get_effective_discount(user) if apply_discount else 0
+
+        if discount >= 100 and not any(p.currency == currency for p in duration.prices):
+            fallback = next((p.price for p in duration.prices), Decimal(0))
+            logger.info(
+                f"{user.log} 100% discount: currency '{currency}' has no price, "
+                f"using fallback original amount '{fallback}'"
+            )
+            return self.calculate(user, fallback, currency, apply_discount=apply_discount)
+
+        return self.calculate(
+            user, duration.get_price(currency), currency, apply_discount=apply_discount
         )
 
     def parse_price(self, input_price: str, currency: Currency) -> Decimal:

@@ -89,9 +89,8 @@ async def _create_payment_and_get_data(
         return None
 
     transaction_plan = PlanSnapshotDto.from_plan(plan, duration.days)
-    price = duration.get_price(payment_gateway.currency)
-    pricing = pricing_service.calculate(
-        user, price, payment_gateway.currency, apply_discount=not plan.is_trial
+    pricing = pricing_service.calculate_for_duration(
+        user, duration, payment_gateway.currency, apply_discount=not plan.is_trial
     )
 
     try:
