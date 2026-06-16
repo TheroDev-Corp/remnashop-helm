@@ -151,11 +151,17 @@ class AssignReferralRewards(Interactor[AssignReferralRewardsDto, None]):
         self.calculate_referral_reward = calculate_referral_reward
         self.give_referrer_reward = give_referrer_reward
 
-    async def _execute(self, actor: UserDto, data: AssignReferralRewardsDto) -> None:
+    async def _execute(self, actor: UserDto, data: AssignReferralRewardsDto) -> None:  # noqa: C901
         settings = await self.settings_dao.get()
 
         if not settings.referral.enable:
             logger.info("Referral system is disabled; reward assignment skipped")
+            return
+
+        if data.transaction.plan_snapshot and data.transaction.plan_snapshot.is_trial:
+            logger.info(
+                f"Skip rewards: transaction '{data.transaction.id}' is a trial plan purchase"
+            )
             return
 
         if (
