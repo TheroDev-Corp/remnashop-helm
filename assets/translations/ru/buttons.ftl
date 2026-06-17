@@ -393,13 +393,14 @@ btn-gateway =
     .test = 🐞 Тест
     .default-currency = 💸 Валюта по умолчанию
     .placement = 🔢 Изменить позиционирование
+    .field-reset = ♻️ Сбросить значение
 
     .active-toggle = { $is_active ->
     [1] 🟢 Включено
     *[0] 🔴 Выключено
     }
 
-    .default-currency-choice = { $enabled -> 
+    .default-currency-choice = { $enabled ->
     [1] 🔘
     *[0] ⚪
     } { $symbol } { $currency }

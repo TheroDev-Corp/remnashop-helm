@@ -83,6 +83,7 @@ async def field_getter(
     return {
         "gateway_type": gateway.type,
         "field": selected_field,
+        "is_empty": getattr(gateway.settings, selected_field, None) is None,
     }
 
 

@@ -31,6 +31,7 @@ from .handlers import (
     on_active_toggle,
     on_default_currency_select,
     on_field_input,
+    on_field_reset,
     on_field_select,
     on_gateway_move,
     on_gateway_select,
@@ -142,6 +143,14 @@ gateway_settings = Window(
 gateway_field = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-gateways-field", gateway_type=F["gateway_type"]),
+    Row(
+        Button(
+            text=I18nFormat("btn-gateway.field-reset"),
+            id="field_reset",
+            on_click=on_field_reset,
+            when=~F["is_empty"],
+        ),
+    ),
     Row(
         SwitchTo(
             text=I18nFormat("btn-back.general"),

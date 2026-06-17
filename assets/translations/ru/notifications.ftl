@@ -111,6 +111,8 @@ ntf-gateway =
     .test-payment-created = ✅ <i><a href="{ $url }">Тестовый платеж</a> успешно создан.</i>
     .test-payment-error = ❌ <i>Ошибка при создании тестового платежа.</i>
     .test-payment-confirmed = ✅ <i>Тестовый платеж успешно обработан.</i>
+    .field-reset = ✅ <i>Значение поля очищено.</i>
+    .field-reset-deactivated = ✅ <i>Значение поля очищено. Шлюз отключён: не хватает обязательных настроек.</i>
 
 ntf-subscription =
     .plans-unavailable = ❌ <i>В данный момент нет доступных планов.</i>
