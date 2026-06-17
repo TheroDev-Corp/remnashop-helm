@@ -3,7 +3,7 @@ import hmac
 import uuid
 from decimal import Decimal
 from typing import Any, Final, Union
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 from uuid import UUID
 
 import orjson
@@ -94,7 +94,9 @@ class YoomoneyGateway(BasePaymentGateway):
         try:
             body_bytes = await request.body()
             body_str = body_bytes.decode("utf-8")
-            parsed = parse_qs(body_str)
+            # keep_blank_values=True preserves empty fields (e.g. `sender=`) that
+            # must remain part of the signed string — otherwise HMAC won't match.
+            parsed = parse_qs(body_str, keep_blank_values=True)
             data = {k: v[0] for k, v in parsed.items()}
             logger.debug(f"Webhook data: {data}")
             return data
@@ -117,25 +119,31 @@ class YoomoneyGateway(BasePaymentGateway):
         }
 
     def _verify_webhook(self, data: dict) -> bool:
-        params = [
-            data.get("notification_type", ""),
-            data.get("operation_id", ""),
-            data.get("amount", ""),
-            data.get("currency", ""),
-            data.get("datetime", ""),
-            data.get("sender", ""),
-            data.get("codepro", ""),
-            self.data.settings.secret_key.get_secret_value(),  # type: ignore[union-attr]
-            data.get("label", ""),
-        ]
+        # YooMoney migrated from SHA-1 (`sha1_hash`) to HMAC-SHA256 (`sign`):
+        # the signature is computed over all notification parameters except
+        # `sign`, sorted alphabetically, values URL-encoded per RFC 3986,
+        # joined as `key=value` with `&`, result in lowercase HEX.
+        # Docs: https://yoomoney.ru/docs/payment-buttons/using-api/notifications
+        received_sign = data.get("sign", "")
+        if not received_sign:
+            logger.warning("Webhook is missing required 'sign' parameter")
+            return False
 
-        sign_str = "&".join(params)
-        computed_hash = hashlib.sha1(sign_str.encode("utf-8")).hexdigest()
+        sign_str = "&".join(
+            f"{key}={quote(str(value), safe='')}"
+            for key, value in sorted(data.items())
+            if key != "sign"
+        )
 
-        is_valid: bool = hmac.compare_digest(computed_hash, data.get("sha1_hash", ""))
+        secret = self.data.settings.secret_key.get_secret_value()  # type: ignore[union-attr]
+        computed_sign = hmac.new(
+            secret.encode("utf-8"),
+            sign_str.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        is_valid: bool = hmac.compare_digest(computed_sign, received_sign)
         if not is_valid:
-            logger.warning(
-                f"Invalid signature. Expected {computed_hash}, received {data.get('sha1_hash')}"
-            )
+            logger.warning(f"Invalid signature. Expected {computed_sign}, received {received_sign}")
 
         return is_valid
