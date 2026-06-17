@@ -79,9 +79,13 @@ class CreateDefaultPaymentGateway(Interactor[None, None]):
 
     async def _execute(self, actor: UserDto, data: None) -> None:
         async with self.uow:
+            created_any = False
+
             for gateway_type in PaymentGatewayType:
                 if await self.gateway_dao.get_by_type(gateway_type):
                     continue
+
+                created_any = True
 
                 is_active = gateway_type == PaymentGatewayType.TELEGRAM_STARS
 
@@ -113,7 +117,19 @@ class CreateDefaultPaymentGateway(Interactor[None, None]):
                 )
                 logger.info(f"Payment gateway '{gateway_type}' created")
 
+            if created_any:
+                await self._reorder_to_enum()
+
             await self.uow.commit()
+
+    async def _reorder_to_enum(self) -> None:
+        order = {gateway_type: i for i, gateway_type in enumerate(PaymentGatewayType, start=1)}
+
+        for gateway in await self.gateway_dao.get_all():
+            desired_index = order[gateway.type]
+            if gateway.order_index != desired_index:
+                gateway.order_index = desired_index
+                await self.gateway_dao.update(gateway)
 
 
 @dataclass(frozen=True)
