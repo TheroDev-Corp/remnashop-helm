@@ -274,9 +274,9 @@ promocode_window = Window(
         promo_code=F["promo_code"],
         reward_type=F["promo_reward_type"],
         reward=F["promo_reward"],
+        show_reset_warning=F["show_reset_warning"],
+        will_replace_subscription=F["will_replace_subscription"],
     ),
-    I18nFormat("msg-promocode-reset-warning", F["show_reset_warning"]),
-    I18nFormat("msg-promocode-replace-warning", F["will_replace_subscription"]),
     MessageInput(on_promocode_input),
     Row(
         Button(
