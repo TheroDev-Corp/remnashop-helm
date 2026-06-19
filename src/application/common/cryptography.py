@@ -1,4 +1,4 @@
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Awaitable, Callable, Optional, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -13,8 +13,12 @@ class Cryptographer(Protocol):
 
     def get_hash(self, data: Any) -> str: ...
 
-    def base62_encode(self, number: int) -> str: ...
-
     def is_encrypted(self, value: str) -> bool: ...
 
-    def generate_short_code(self, data: Any, length: int = 6) -> str: ...
+    def generate_random_code(self, length: int = 6) -> str: ...
+
+    async def generate_unique_code(
+        self,
+        is_taken: Callable[[str], Awaitable[Optional[Any]]],
+        length: int = 6,
+    ) -> str: ...

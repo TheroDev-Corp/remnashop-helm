@@ -1,10 +1,8 @@
-import re
-
 from httpx import Cookies
 from pydantic import SecretStr, field_validator
 from pydantic_core.core_schema import FieldValidationInfo
 
-from src.core.constants import DOMAIN_REGEX
+from src.core.utils.validators import is_valid_domain
 
 from .base import BaseConfig
 from .validators import validate_not_change_me
@@ -29,7 +27,7 @@ class RemnawaveConfig(BaseConfig, env_prefix="REMNAWAVE_"):
 
         if "://" in clean_host:
             final_url = clean_host
-        elif re.match(DOMAIN_REGEX, clean_host):
+        elif is_valid_domain(clean_host):
             final_url = f"https://{clean_host}"
         else:
             final_url = f"http://{clean_host}"

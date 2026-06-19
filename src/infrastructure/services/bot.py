@@ -1,7 +1,8 @@
-from typing import Optional
+from typing import Optional, Union
 from urllib.parse import quote
 
 from aiogram import Bot
+from aiogram.utils.chat_member import ChatMemberUnion
 
 from src.core.config import AppConfig
 from src.core.constants import T_ME
@@ -60,7 +61,14 @@ class BotService:
         base_url = await self._get_bot_redirect_url()
         return Deeplink.PLAN.build_url(base_url, public_code)
 
+    async def get_ad_link_url(self, code: str) -> str:
+        base_url = await self._get_bot_redirect_url()
+        return Deeplink.ADVERTISING.build_url(base_url, code)
+
     def get_support_url(self, text: Optional[str] = None) -> str:
         base_url = f"{T_ME}{self.config.bot.support_username.get_secret_value()}"
         encoded_text = quote(text or "")
         return f"{base_url}?text={encoded_text}"
+
+    async def get_chat_member(self, chat_id: Union[str, int], user_id: int) -> ChatMemberUnion:
+        return await self.bot.get_chat_member(chat_id=chat_id, user_id=user_id)

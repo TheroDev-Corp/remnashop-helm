@@ -2,15 +2,19 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+from adaptix import Retort
 from aiogram import Dispatcher
 from aiogram.types import WebhookInfo
 from dishka import AsyncContainer, Scope
 from fastapi import FastAPI
 from loguru import logger
+from redis.asyncio import Redis
 
-from src.application.common import Remnawave
+from src.application.common import BotService, Remnawave
 from src.application.common.dao import SettingsDao
+from src.application.common.uow import UnitOfWork
 from src.application.events import (
+    BotInlineModeDisabledEvent,
     BotShutdownEvent,
     BotStartupEvent,
     RemnawaveErrorEvent,
@@ -18,13 +22,18 @@ from src.application.events import (
     WebhookErrorEvent,
 )
 from src.application.events.system import RemnashopWelcomeEvent
-from src.application.services import BotService, CommandService, WebhookService
 from src.application.use_cases.gateways.commands.payment import CreateDefaultPaymentGateway
 from src.core.config import AppConfig
 from src.core.constants import REMNAWAVE_MAX_VERSION
 from src.core.utils.i18n_helpers import i18n_format_seconds
 from src.core.utils.time import get_uptime
-from src.infrastructure.services import EventBusImpl
+from src.infrastructure.redis.keys import WelcomedVersionKey
+from src.infrastructure.services import (
+    CommandService,
+    EventBusImpl,
+    NotificationWorker,
+    WebhookService,
+)
 from src.web.endpoints import TelegramWebhookEndpoint
 
 
@@ -38,24 +47,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     event_bus.set_container_factory(lambda: container)
     event_bus.autodiscover()
 
+    notification_worker = await container.get(NotificationWorker)
+    notification_worker.set_container_factory(lambda: container)
+
     async with container(scope=Scope.REQUEST) as startup_container:
         config = await startup_container.get(AppConfig)
         bot_service = await startup_container.get(BotService)
         settings_dao = await startup_container.get(SettingsDao)
+        uow = await startup_container.get(UnitOfWork)
         webhook_service = await startup_container.get(WebhookService)
         command_service = await startup_container.get(CommandService)
         remnawave_service = await startup_container.get(Remnawave)
         create_default_payment_gateway = await startup_container.get(CreateDefaultPaymentGateway)
+        redis = await startup_container.get(Redis)
+        retort = await startup_container.get(Retort)
 
         if not await bot_service.is_inline_enabled():
             logger.warning(
                 "Bot is not enabled for inline mode. "
                 "Please enable Inline Mode in BotFather for correct work of some features"
             )
+            await event_bus.publish(BotInlineModeDisabledEvent())
 
         states = await bot_service.get_bot_states()
         await create_default_payment_gateway.system()
-        settings = await settings_dao.get()
+        # `get()` lazily creates default settings via flush; commit here so the
+        # DAO stays free of commits (UoW owns the transaction boundary).
+        async with uow:
+            settings = await settings_dao.get()
+            await uow.commit()
         allowed_updates = dispatcher.resolve_used_update_types()
         webhook_info: WebhookInfo = await webhook_service.setup_webhook(allowed_updates)
 
@@ -95,7 +115,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         """  # noqa: W605
     )
 
-    await event_bus.publish(RemnashopWelcomeEvent())
+    current_version = config.build.tag or "dev"
+    welcomed_key = retort.dump(WelcomedVersionKey(version="*"))
+    last_welcomed = await redis.get(welcomed_key)
+
+    if last_welcomed != current_version:
+        await redis.set(welcomed_key, current_version)
+        await event_bus.publish(RemnashopWelcomeEvent())
 
     bot_startup_event = BotStartupEvent(
         **config.build.data,
@@ -129,6 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await asyncio.sleep(2)
 
     await event_bus.shutdown()
+    await notification_worker.shutdown()
     await telegram_webhook_endpoint.shutdown()
     await command_service.delete_commands()
     await webhook_service.delete_webhook()

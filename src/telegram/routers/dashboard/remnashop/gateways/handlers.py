@@ -8,9 +8,11 @@ from loguru import logger
 
 from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao
-from src.application.dto import MessagePayloadDto, UserDto
+from src.application.dto import MessagePayloadDto, TelegramUserDto
 from src.application.use_cases.gateways.commands.configuration import (
     MovePaymentGatewayUp,
+    ResetPaymentGatewaySettingsDto,
+    ResetPaymentGatewaySettingsField,
     TogglePaymentGatewayActive,
     UpdatePaymentGatewaySettings,
     UpdatePaymentGatewaySettingsDto,
@@ -31,7 +33,7 @@ async def on_gateway_select(
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
     notifier: FromDishka[Notifier],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     gateway_id = int(dialog_manager.item_id)  # type: ignore[attr-defined]
     gateway = await payment_gateway_dao.get_by_id(gateway_id)
 
@@ -57,7 +59,7 @@ async def on_gateway_test(
     create_test_payment: FromDishka[CreateTestPayment],
     notifier: FromDishka[Notifier],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     gateway_id = int(dialog_manager.item_id)  # type: ignore[attr-defined]
     gateway = await payment_gateway_dao.get_by_id(gateway_id)
 
@@ -86,7 +88,6 @@ async def on_gateway_test(
             f"{user.log} Test payment failed for gateway '{gateway_id}'. Exception: {e}"
         )
         await notifier.notify_user(user, i18n_key="ntf-gateway.test-payment-error")
-        raise
 
 
 @inject
@@ -97,7 +98,7 @@ async def on_active_toggle(
     notifier: FromDishka[Notifier],
     toggle_payment_gateway_active: FromDishka[TogglePaymentGatewayActive],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     gateway_id = int(dialog_manager.item_id)  # type: ignore[attr-defined]
 
     try:
@@ -112,7 +113,7 @@ async def on_field_select(
     dialog_manager: DialogManager,
     selected_field: str,
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     dialog_manager.dialog_data["selected_field"] = selected_field
     logger.info(f"{user.log} Selected field '{selected_field}' for editing")
     await dialog_manager.switch_to(state=RemnashopGateways.FIELD)
@@ -127,14 +128,17 @@ async def on_field_input(
     update_payment_gateway_settings: FromDishka[UpdatePaymentGatewaySettings],
 ) -> None:
     dialog_manager.show_mode = ShowMode.EDIT
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     gateway_id = dialog_manager.dialog_data["gateway_id"]
     selected_field = dialog_manager.dialog_data["selected_field"]
 
     if not message.text:
         logger.warning(f"{user.log} Empty input for field '{selected_field}'")
-        await notifier.notify_user(user, i18n_key="ntf-gateway.field-wrong-value")
+        await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
+
+    # display_name may carry custom (premium) emoji, preserved as <tg-emoji> tags
+    value = message.html_text if selected_field == "display_name" else message.text
 
     try:
         await update_payment_gateway_settings(
@@ -142,12 +146,37 @@ async def on_field_input(
             UpdatePaymentGatewaySettingsDto(
                 gateway_id=gateway_id,
                 field_name=selected_field,
-                value=message.text,
+                value=value,
             ),
         )
         await dialog_manager.switch_to(state=RemnashopGateways.SETTINGS)
     except ValueError:
-        await notifier.notify_user(user, i18n_key="ntf-gateway.field-wrong-value")
+        await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
+
+
+@inject
+async def on_field_reset(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    notifier: FromDishka[Notifier],
+    reset_field: FromDishka[ResetPaymentGatewaySettingsField],
+) -> None:
+    dialog_manager.show_mode = ShowMode.EDIT
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    gateway_id = dialog_manager.dialog_data["gateway_id"]
+    selected_field = dialog_manager.dialog_data["selected_field"]
+
+    deactivated = await reset_field(
+        user,
+        ResetPaymentGatewaySettingsDto(gateway_id=gateway_id, field_name=selected_field),
+    )
+
+    i18n_key = (
+        "ntf-gateway.field-reset-deactivated" if deactivated else "ntf-gateway.field-reset"
+    )
+    await notifier.notify_user(user, i18n_key=i18n_key)
+    await dialog_manager.switch_to(state=RemnashopGateways.SETTINGS)
 
 
 @inject
@@ -158,7 +187,7 @@ async def on_default_currency_select(
     selected_currency: Currency,
     update_default_currency: FromDishka[UpdateDefaultCurrency],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     await update_default_currency(user, selected_currency)
 
 
@@ -169,6 +198,6 @@ async def on_gateway_move(
     dialog_manager: DialogManager,
     move_payment_gateway_up: FromDishka[MovePaymentGatewayUp],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     gateway_id = int(dialog_manager.item_id)  # type: ignore[attr-defined]
     await move_payment_gateway_up(user, gateway_id)

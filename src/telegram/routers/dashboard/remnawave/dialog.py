@@ -1,10 +1,10 @@
 from aiogram_dialog import Dialog, StartMode, Window
-from aiogram_dialog.widgets.kbd import Group, NumberedPager, Row, Start, StubScroll, SwitchTo
 
 from src.core.enums import BannerName
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import Dashboard, DashboardRemnawave
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Group, NumberedPager, Row, Start, StubScroll, SwitchTo
 
 from .getters import (
     hosts_getter,

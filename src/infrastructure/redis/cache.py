@@ -35,6 +35,34 @@ def _extract_args(func: Callable, args: tuple, kwargs: dict) -> dict[str, Any]:
     return result
 
 
+def build_cache_key(
+    prefix: Optional[str],
+    func_name: str,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> str:
+    parts = [prefix or func_name]
+    parts.extend(map(str, args))
+    parts.extend(f"{name}={value}" for name, value in kwargs.items())
+    return "cache:" + ":".join(parts)
+
+
+def _build_storage_key(
+    key_builder: type[StorageKey],
+    retort: Retort,
+    func_args: dict[str, Any],
+) -> Optional[str]:
+    try:
+        return f"cache:{retort.dump(key_builder(**func_args))}"
+    except Exception:
+        for arg_val in func_args.values():
+            try:
+                return f"cache:{retort.dump(key_builder.from_obj(arg_val))}"
+            except Exception:
+                continue
+    return None
+
+
 def provide_cache(  # noqa: C901
     prefix: Optional[str] = None,
     ttl: ExpiryT = TIME_1M,
@@ -51,26 +79,12 @@ def provide_cache(  # noqa: C901
 
             if isinstance(key_builder, type) and issubclass(key_builder, StorageKey):
                 func_args = _extract_args(func, args, kwargs)
-                try:
-                    key_obj = key_builder(**func_args)
-                    key = retort.dump(key_obj)
-                except Exception:
-                    key = "unknown_key"
-                    for arg_val in func_args.values():
-                        try:
-                            key_obj = key_builder.from_obj(arg_val)
-                            key = retort.dump(key_obj)
-                            break
-                        except Exception:
-                            continue
+                key = _build_storage_key(key_builder, retort, func_args) or "cache:unknown_key"
             elif key_builder:
                 suffix = str(key_builder(*args, **kwargs))
                 key = f"cache:{prefix or func.__name__}:{suffix}"
             else:
-                key_parts = ["cache", prefix or func.__name__]
-                key_parts.extend(map(str, args[1:]))
-                key_parts.extend(map(str, kwargs.values()))
-                key = ":".join(key_parts)
+                key = build_cache_key(prefix, func.__name__, args[1:], kwargs)
 
             try:
                 cached_data = await redis.get(key)
@@ -112,19 +126,7 @@ def invalidate_cache(  # noqa: C901
             try:
                 if isinstance(key_builder, type) and issubclass(key_builder, StorageKey):
                     func_args = _extract_args(func, args, kwargs)
-
-                    key = None
-                    try:
-                        key_obj = key_builder(**func_args)
-                        key = retort.dump(key_obj)
-                    except Exception:
-                        for arg_val in func_args.values():
-                            try:
-                                key_obj = key_builder.from_obj(arg_val)
-                                key = retort.dump(key_obj)
-                                break
-                            except Exception:
-                                continue
+                    key = _build_storage_key(key_builder, retort, func_args)
 
                     if key:
                         await redis.delete(key)
@@ -147,7 +149,9 @@ def invalidate_cache(  # noqa: C901
                                 f"No cache keys found to invalidate for pattern '{pattern}'"
                             )
             except Exception as e:
-                logger.warning(f"Cache invalidation failed for '{key_builder}' error '{e}'")
+                logger.error(
+                    f"Cache invalidation FAILED for '{key_builder}' error '{e}'; stale data risk"
+                )
 
             return result
 

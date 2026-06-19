@@ -8,7 +8,7 @@ from loguru import logger
 
 from src.application.common import Notifier
 from src.application.common.dao import BroadcastDao
-from src.application.dto import BroadcastDto, BroadcastMessageDto, UserDto
+from src.application.dto import BroadcastDto, BroadcastMessageDto, MessagePayloadDto, UserDto
 from src.application.use_cases.broadcast.commands.lifecycle import (
     FinishBroadcast,
     FinishBroadcastDto,
@@ -33,7 +33,7 @@ from src.infrastructure.taskiq.broker import broker
 
 @broker.task
 @inject(patch_module=True)
-async def send_broadcast_task(
+async def send_broadcast_task(  # noqa: C901
     broadcast: BroadcastDto,
     plan_id: Optional[int],
     broadcast_dao: FromDishka[BroadcastDao],
@@ -45,101 +45,144 @@ async def send_broadcast_task(
 ) -> None:
     task_id = broadcast.task_id
 
-    users = await get_broadcast_audience_users.system(
-        GetBroadcastAudienceUsersDto(broadcast.audience, plan_id)
-    )
-
-    if not users:
-        logger.warning(f"No users found for broadcast '{task_id}'")
-        await finish_broadcast.system(FinishBroadcastDto(task_id, BroadcastStatus.COMPLETED))
-        return
-
-    messages = [
-        BroadcastMessageDto(
-            user_telegram_id=user.telegram_id,
-            status=BroadcastMessageStatus.PENDING,
+    try:
+        users = await get_broadcast_audience_users.system(
+            GetBroadcastAudienceUsersDto(broadcast.audience, plan_id)
         )
-        for user in users
-    ]
 
-    messages = await initialize_broadcast_messages.system(
-        InitializeBroadcastMessagesDto(task_id, messages)
-    )
+        # Broadcast is Telegram-only; exclude web-only users without a telegram_id
+        users = [u for u in users if u.telegram_id is not None]
 
-    total_users = len(users)
-    loop = asyncio.get_running_loop()
-    start_time = loop.time()
-    total_retry_time = 0.0
-    semaphore = asyncio.Semaphore(BATCH_SIZE_20)
+        if not users:
+            logger.warning(f"No users found for broadcast '{task_id}'")
+            await finish_broadcast.system(FinishBroadcastDto(task_id, BroadcastStatus.COMPLETED))
+            return
 
-    logger.info(f"Started sending broadcast '{task_id}', total users: {total_users}")
+        messages = []
+        for user in users:
+            messages.append(
+                BroadcastMessageDto(
+                    user_id=user.id,
+                    user_telegram_id=user.telegram_id,
+                    status=BroadcastMessageStatus.PENDING,
+                )
+            )
 
-    async def send_one(user: UserDto) -> tuple:
-        nonlocal total_retry_time
-        status = BroadcastMessageStatus.FAILED
-        msg_id = None
-        retry_time_for_user = 0.0
+        messages = await initialize_broadcast_messages.system(
+            InitializeBroadcastMessagesDto(task_id, messages)
+        )
 
-        while True:
-            try:
-                async with semaphore:
-                    tg_message = await notifier.notify_user(user, payload=broadcast.payload)
+        total_users = len(users)
+        loop = asyncio.get_running_loop()
+        start_time = loop.time()
+        total_retry_time = 0.0
+        semaphore = asyncio.Semaphore(BATCH_SIZE_20)
 
-                if tg_message:
-                    status = BroadcastMessageStatus.SENT
-                    msg_id = tg_message.message_id
+        logger.info(f"Started sending broadcast '{task_id}', total users: {total_users}")
 
-                return user.telegram_id, status, msg_id, retry_time_for_user
+        was_canceled = False
 
-            except TelegramRetryAfter as error:
-                wait_time = error.retry_after + BATCH_DELAY
-                logger.warning(f"Flood wait {error.retry_after}s for user '{user.telegram_id}'")
-                await asyncio.sleep(wait_time)
-                retry_time_for_user += wait_time
-                total_retry_time += wait_time
-            except Exception:
-                logger.exception(f"Failed to send to '{user.telegram_id}'")
-                return user.telegram_id, status, msg_id, retry_time_for_user
+        async def send_one(user: UserDto) -> tuple:
+            nonlocal total_retry_time
+            status = BroadcastMessageStatus.FAILED
+            msg_id = None
+            retry_time_for_user = 0.0
 
-    for i, batch in enumerate(chunked(users, BATCH_SIZE_20), start=1):
-        if i % 5 == 0:
+            while True:
+                try:
+                    async with semaphore:
+                        tg_message = await notifier.notify_user(user, payload=broadcast.payload)
+
+                    if tg_message:
+                        status = BroadcastMessageStatus.SENT
+                        msg_id = tg_message.message_id
+
+                    return user.id, user.telegram_id, status, msg_id, retry_time_for_user
+
+                except TelegramRetryAfter as error:
+                    wait_time = error.retry_after + BATCH_DELAY
+                    logger.warning(f"Flood wait {error.retry_after}s for user {user.log}")
+                    await asyncio.sleep(wait_time)
+                    retry_time_for_user += wait_time
+                    total_retry_time += wait_time
+                except Exception:
+                    logger.exception(f"Failed to send to {user.log}")
+                    return user.id, user.telegram_id, status, msg_id, retry_time_for_user
+
+        for i, batch in enumerate(chunked(users, BATCH_SIZE_20), start=1):
+            # Check cancellation every batch (a single cheap SELECT) so a cancel request
+            # stops sending promptly instead of after up to ~100 more messages.
             current = await broadcast_dao.get_by_task_id(task_id)
             if not current or current.status == BroadcastStatus.CANCELED:
                 logger.info(f"Broadcast '{task_id}' was canceled")
+                was_canceled = True
                 break
 
-        tasks = [asyncio.create_task(send_one(user)) for user in batch]
-        results = await asyncio.gather(*tasks)
+            tasks = [asyncio.create_task(send_one(user)) for user in batch]
+            results = await asyncio.gather(*tasks)
 
-        updates = UpdateBroadcastMessageStatusDto(
-            task_id=task_id,
-            messages=[
-                BroadcastMessageDto(
-                    id=next(m.id for m in messages if m.user_telegram_id == tg_id),
-                    user_telegram_id=tg_id,
-                    status=status,
-                    message_id=msg_id,
-                )
-                for tg_id, status, msg_id, _ in results
-            ],
+            updates = UpdateBroadcastMessageStatusDto(
+                task_id=task_id,
+                messages=[
+                    BroadcastMessageDto(
+                        id=next(m.id for m in messages if m.user_id == uid),
+                        user_id=uid,
+                        user_telegram_id=tg_id,
+                        status=status,
+                        message_id=msg_id,
+                    )
+                    for uid, tg_id, status, msg_id, _ in results
+                ],
+            )
+
+            await update_broadcast_message_status.system(updates)
+
+            sent_count = sum(
+                1 for _, _, status, _, _ in results if status == BroadcastMessageStatus.SENT
+            )
+            failed_count = len(results) - sent_count
+            batch_retry_time = sum(r[4] for r in results)
+
+            logger.info(
+                f"Batch {i}: sent={sent_count}, failed={failed_count}, "
+                f"retry_time={batch_retry_time:.2f}s"
+            )
+
+        total_elapsed = loop.time() - start_time
+        final_status = BroadcastStatus.CANCELED if was_canceled else BroadcastStatus.COMPLETED
+        await finish_broadcast.system(FinishBroadcastDto(task_id, final_status))
+        logger.success(
+            f"Broadcast '{task_id}' finished in {total_elapsed:.2f}s "
+            f"with total retry time {total_retry_time:.2f}s"
         )
 
-        await update_broadcast_message_status.system(updates)
+    except Exception:
+        logger.exception(f"Broadcast '{task_id}' failed with an unexpected error")
+        await finish_broadcast.system(FinishBroadcastDto(task_id, BroadcastStatus.ERROR))
+        return
 
-        sent_count = sum(1 for _, status, _, _ in results if status == BroadcastMessageStatus.SENT)
-        failed_count = len(results) - sent_count
-        batch_retry_time = sum(r[3] for r in results)
 
-        logger.info(
-            f"Batch {i}: sent={sent_count}, failed={failed_count}, "
-            f"retry_time={batch_retry_time:.2f}s"
+async def _finalize_broadcast_deletion(
+    finish_broadcast: FinishBroadcast,
+    notifier: Notifier,
+    broadcast: BroadcastDto,
+    total: int,
+    deleted: int,
+) -> None:
+    await finish_broadcast.system(
+        FinishBroadcastDto(task_id=broadcast.task_id, status=BroadcastStatus.DELETED)
+    )
+    await notifier.notify_admins(
+        MessagePayloadDto(
+            i18n_key="ntf-broadcast.deleted-success",
+            i18n_kwargs={
+                "task_id": str(broadcast.task_id),
+                "total_count": total,
+                "deleted_count": deleted,
+                "failed_count": total - deleted,
+            },
+            disable_default_markup=False,
         )
-
-    total_elapsed = loop.time() - start_time
-    await finish_broadcast.system(FinishBroadcastDto(task_id, BroadcastStatus.COMPLETED))
-    logger.success(
-        f"Broadcast '{task_id}' finished in {total_elapsed:.2f}s "
-        f"with total retry time {total_retry_time:.2f}s"
     )
 
 
@@ -149,12 +192,15 @@ async def delete_broadcast_task(
     broadcast: BroadcastDto,
     bot: FromDishka[Bot],
     bulk_update_broadcast_messages: FromDishka[BulkUpdateBroadcastMessages],
+    finish_broadcast: FromDishka[FinishBroadcast],
+    notifier: FromDishka[Notifier],
 ) -> tuple[int, int, int]:
     broadcast_id = cast(int, broadcast.id)
 
     if not broadcast.messages:
-        logger.error(f"Messages list is empty for broadcast '{broadcast_id}', aborting")
-        raise ValueError(f"Broadcast '{broadcast_id}' messages is empty")
+        logger.warning(f"No messages to delete for broadcast '{broadcast_id}'")
+        await _finalize_broadcast_deletion(finish_broadcast, notifier, broadcast, 0, 0)
+        return 0, 0, 0
 
     logger.info(f"Started deleting messages for broadcast '{broadcast_id}'")
 
@@ -173,14 +219,16 @@ async def delete_broadcast_task(
         if (
             message.status not in (BroadcastMessageStatus.SENT, BroadcastMessageStatus.EDITED)
             or not message.message_id
+            or not message.user_telegram_id
         ):
             return message, retry_time_for_msg
 
+        user_telegram_id: int = message.user_telegram_id
         while True:
             try:
                 async with semaphore:
                     if await bot.delete_message(
-                        chat_id=message.user_telegram_id, message_id=message.message_id
+                        chat_id=user_telegram_id, message_id=message.message_id
                     ):
                         message.status = BroadcastMessageStatus.DELETED
 
@@ -227,6 +275,9 @@ async def delete_broadcast_task(
         f"Time: {total_elapsed:.2f}s, Retry time: {total_retry_time:.2f}s"
     )
 
+    await _finalize_broadcast_deletion(
+        finish_broadcast, notifier, broadcast, total_messages, deleted_count
+    )
     return total_messages, deleted_count, total_messages - deleted_count
 
 

@@ -1,6 +1,5 @@
 from aiogram_dialog import Dialog, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import Button, Column, Row, Select, Start, SwitchTo
 from magic_filter import F
 
 from src.core.enums import (
@@ -12,6 +11,7 @@ from src.core.enums import (
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import DashboardRemnashop, RemnashopReferral
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Button, Column, Row, Select, Start, SwitchTo
 
 from .getters import (
     accrual_strategy_getter,
@@ -35,7 +35,7 @@ referral = Window(
     I18nFormat("msg-referral-main"),
     Row(
         Button(
-            text=I18nFormat("btn-referral.enable"),
+            text=I18nFormat("btn-referral.active-toggle"),
             id="enable",
             on_click=on_enable_toggle,
         ),

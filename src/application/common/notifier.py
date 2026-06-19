@@ -4,6 +4,7 @@ from aiogram.types import Message
 
 from src.application.dto import MessagePayloadDto, TempUserDto, UserDto
 from src.core.enums import Role
+from src.core.types import NotificationType
 
 
 @runtime_checkable
@@ -19,6 +20,13 @@ class Notifier(Protocol):
         self,
         payload: MessagePayloadDto,
         roles: list[Role] = [Role.OWNER, Role.DEV, Role.ADMIN],
+    ) -> None: ...
+
+    async def notify_system(
+        self,
+        payload: MessagePayloadDto,
+        roles: list[Role] = [Role.OWNER, Role.DEV, Role.ADMIN],
+        notification_type: Optional[NotificationType] = None,
     ) -> None: ...
 
     async def delete_notification(self, chat_id: int, message_id: int) -> None: ...

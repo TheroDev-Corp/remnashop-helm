@@ -1,6 +1,7 @@
 import inspect
 import logging
 import sys
+from collections import deque
 from typing import Final, Union
 
 from loguru import logger
@@ -8,6 +9,7 @@ from loguru import logger
 from src.core.config import AppConfig
 from src.core.constants import LOG_DIR
 
+LOG_BUFFER_CAPACITY: Final[int] = 200
 LOG_FILENAME: Final[str] = "bot.log"
 LOG_ENCODING: Final[str] = "utf-8"
 LOG_FORMAT: Final[str] = (
@@ -15,6 +17,21 @@ LOG_FORMAT: Final[str] = (
     "<level>{level: <8}</level> | "
     "<cyan>{name}</cyan>:<cyan>{line}</cyan> | <level>{message}</level>"
 )
+
+
+class LogBuffer:
+    def __init__(self, capacity: int = LOG_BUFFER_CAPACITY) -> None:
+        self._records: deque[str] = deque(maxlen=capacity)
+
+    def write(self, message: str) -> None:
+        self._records.append(message.rstrip())
+
+    def get_context(self, lines: int = 100) -> str:
+        records = list(self._records)
+        return "\n".join(records[-lines:])
+
+
+log_buffer = LogBuffer()
 
 
 class InterceptHandler(logging.Handler):
@@ -58,6 +75,13 @@ def setup_logger(config: AppConfig) -> None:
             compression=config.log.compression,
             encoding=LOG_ENCODING,
         )
+
+    logger.add(
+        sink=log_buffer.write,
+        level=config.log.level,
+        format=LOG_FORMAT,
+        colorize=False,
+    )
 
     intercept_handler = InterceptHandler()
     logging.basicConfig(handlers=[intercept_handler], level=logging.INFO, force=True)

@@ -1,16 +1,15 @@
 from dataclasses import dataclass
 from typing import Final, Optional, Union
 
-from aiogram import Bot
 from aiogram.enums import ChatMemberStatus
+from aiogram.exceptions import TelegramBadRequest
 from loguru import logger
 
-from src.application.common import EventPublisher, Interactor
+from src.application.common import BotService, EventPublisher, Interactor
 from src.application.common.dao import SettingsDao
 from src.application.common.policy import Permission
 from src.application.dto import UserDto
-from src.application.events import ErrorEvent
-from src.core.config import AppConfig
+from src.application.events import ChannelCheckErrorEvent
 
 ALLOWED_STATUSES: Final[tuple[ChatMemberStatus, ...]] = (
     ChatMemberStatus.CREATOR,
@@ -36,20 +35,20 @@ class CheckRules(Interactor[None, CheckRulesResultDto]):
         settings = await self.settings_dao.get()
 
         if actor.is_privileged:
-            logger.debug(f"User '{actor.telegram_id}' skipped rules check due to privileges")
+            logger.debug(f"{actor.log} skipped rules check due to privileges")
             return CheckRulesResultDto(is_required=False, is_accepted=True)
 
         if not settings.requirements.rules_required:
-            logger.debug(f"Rules check skipped for '{actor.telegram_id}': requirement is disabled")
+            logger.debug(f"Rules check skipped for {actor.log}: requirement is disabled")
             return CheckRulesResultDto(is_required=False, is_accepted=True)
 
         rules_url = settings.requirements.rules_url
 
         if actor.is_rules_accepted:
-            logger.debug(f"User '{actor.telegram_id}' has already accepted rules")
+            logger.debug(f"{actor.log} has already accepted rules")
             return CheckRulesResultDto(is_required=True, is_accepted=True, rules_url=rules_url)
 
-        logger.debug(f"User '{actor.telegram_id}' must accept rules before proceeding")
+        logger.debug(f"{actor.log} must accept rules before proceeding")
         return CheckRulesResultDto(is_required=True, is_accepted=False, rules_url=rules_url)
 
 
@@ -67,13 +66,11 @@ class CheckChannelSubscription(Interactor[None, CheckChannelSubscriptionResultDt
     def __init__(
         self,
         settings_dao: SettingsDao,
-        bot: Bot,
-        config: AppConfig,
+        bot: BotService,
         event_publisher: EventPublisher,
     ) -> None:
         self.settings_dao = settings_dao
         self.bot = bot
-        self.config = config
         self.event_publisher = event_publisher
 
     async def _execute(self, actor: UserDto, data: None) -> CheckChannelSubscriptionResultDto:
@@ -84,12 +81,14 @@ class CheckChannelSubscription(Interactor[None, CheckChannelSubscriptionResultDt
             return CheckChannelSubscriptionResultDto(is_subscribed=True)
 
         if actor.is_privileged:
-            logger.debug(f"User '{actor.telegram_id}' skipped channel check due to privileges")
+            logger.debug(f"{actor.log} skipped channel check due to privileges")
             return CheckChannelSubscriptionResultDto(is_subscribed=True)
 
         req = settings.requirements
         channel_link = req.channel_link.get_secret_value()
         channel_url = req.channel_url
+
+        assert actor.telegram_id is not None
 
         chat_id: Union[str, int, None] = None
         if req.channel_has_username:
@@ -99,28 +98,32 @@ class CheckChannelSubscription(Interactor[None, CheckChannelSubscriptionResultDt
 
         if chat_id is None:
             logger.warning(
-                f"Channel check skipped for '{actor.telegram_id}': no valid chat_id or username"
+                f"Channel check skipped for '{actor.remna_name}': no valid chat_id or username"
+            )
+            await self.event_publisher.publish(
+                ChannelCheckErrorEvent(
+                    telegram_id=actor.telegram_id,
+                    username=actor.username,
+                    name=actor.name,
+                    reason="Channel check skipped: no valid chat_id or username configured",
+                )
             )
             return CheckChannelSubscriptionResultDto(is_subscribed=True)
-
         try:
-            member = await self.bot.get_chat_member(chat_id=chat_id, user_id=actor.telegram_id)
+            member = await self.bot.get_chat_member(chat_id, actor.telegram_id)
 
             is_subscribed = member.status in ALLOWED_STATUSES
             return CheckChannelSubscriptionResultDto(is_subscribed, member.status, channel_url)
 
-        except Exception as e:
-            logger.error(f"Failed to check channel for '{actor.telegram_id}': '{e}'")
-
-            error_event = ErrorEvent(
-                **self.config.build.data,
-                #
-                telegram_id=actor.telegram_id,
-                username=actor.username,
-                name=actor.name,
-                #
-                exception=e,
+        except TelegramBadRequest as e:
+            logger.error(f"Failed to check channel for {actor.log}: '{e}'")
+            await self.event_publisher.publish(
+                ChannelCheckErrorEvent(
+                    telegram_id=actor.telegram_id,
+                    username=actor.username,
+                    name=actor.name,
+                    reason=str(e),
+                )
             )
 
-            await self.event_publisher.publish(error_event)
             return CheckChannelSubscriptionResultDto(is_subscribed=True, error_occurred=True)

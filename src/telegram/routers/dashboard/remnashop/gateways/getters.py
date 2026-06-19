@@ -35,10 +35,10 @@ async def gateways_getter(
 @inject
 async def gateway_getter(
     dialog_manager: DialogManager,
-    config: AppConfig,
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
+    config: AppConfig = kwargs["config"]
     gateway_id = dialog_manager.dialog_data["gateway_id"]
     gateway = await payment_gateway_dao.get_by_id(gateway_id)
 
@@ -48,11 +48,16 @@ async def gateway_getter(
     if not gateway.settings:
         raise ValueError(f"Gateway '{gateway_id}' has not settings")
 
+    settings = gateway.settings.as_list
+    display_name_field = [s for s in settings if s["field"] == "display_name"]
+    other_settings = [s for s in settings if s["field"] != "display_name"]
+
     return {
         "id": gateway.id,
         "gateway_type": gateway.type,
         "is_active": gateway.is_active,
-        "settings": gateway.settings.as_list,
+        "display_name_field": display_name_field,
+        "settings": other_settings,
         "webhook": config.get_webhook(gateway.type),
         "requires_webhook": gateway.requires_webhook,
     }
@@ -78,6 +83,7 @@ async def field_getter(
     return {
         "gateway_type": gateway.type,
         "field": selected_field,
+        "is_empty": getattr(gateway.settings, selected_field, None) is None,
     }
 
 

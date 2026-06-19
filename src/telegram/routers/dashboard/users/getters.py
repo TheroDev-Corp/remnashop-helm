@@ -5,8 +5,10 @@ from aiogram_dialog import DialogManager
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 
-from src.application.common.dao import UserDao
-from src.application.dto import UserDto
+from src.application.common.dao import SettingsDao, UserDao
+from src.application.dto import TelegramUserDto, UserDto
+from src.application.use_cases.user.queries.activity import GetRecentActivityUsers
+from src.core.constants import RECENT_REGISTERED_MAX_COUNT
 from src.core.utils.converters import percent
 
 
@@ -31,18 +33,18 @@ async def recent_registered_getter(
     user_dao: FromDishka[UserDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    users = await user_dao.get_recent_registered_users(limit=50)
+    users = await user_dao.get_recent_registered_users(limit=RECENT_REGISTERED_MAX_COUNT)
     return {"recent_registered_users": users}
 
 
 @inject
 async def recent_activity_getter(
     dialog_manager: DialogManager,
-    user: UserDto,
-    user_dao: FromDishka[UserDao],
+    user: TelegramUserDto,
+    get_recent_activity_users: FromDishka[GetRecentActivityUsers],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    users = await user_dao.get_recent_activity_users(excluded_ids=[user.telegram_id])
+    users = await get_recent_activity_users.system([user.id])
     return {"recent_activity_users": users}
 
 
@@ -61,4 +63,42 @@ async def blacklist_getter(
         "count_blocked": len(blocked_users),
         "count_users": count_users,
         "percent": percent(part=len(blocked_users), whole=count_users),
+    }
+
+
+@inject
+async def blacklist_users_getter(
+    dialog_manager: DialogManager,
+    user_dao: FromDishka[UserDao],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    blocked_users = await user_dao.get_blocked_users()
+    count_users = await user_dao.count()
+    return {
+        "blocked_users": blocked_users,
+        "blocked_users_exists": bool(blocked_users),
+        "count_blocked": len(blocked_users),
+        "count_users": count_users,
+        "percent": percent(part=len(blocked_users), whole=count_users),
+    }
+
+
+@inject
+async def blacklist_sources_getter(
+    dialog_manager: DialogManager,
+    settings_dao: FromDishka[SettingsDao],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    settings = await settings_dao.get()
+    sources = settings.blacklist.sources
+
+    items = []
+    for s in sources:
+        label = s.name or (s.url[:40] + "…" if len(s.url) > 40 else s.url)
+        items.append({"id": s.id, "source": label})
+
+    return {
+        "sources": items,
+        "sources_count": len(items),
+        "has_sources": bool(items),
     }

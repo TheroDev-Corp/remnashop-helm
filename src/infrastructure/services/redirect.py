@@ -3,7 +3,7 @@ from aiogram_dialog import BgManagerFactory, ShowMode, StartMode
 from loguru import logger
 
 from src.application.common import Redirect
-from src.core.constants import TARGET_TELEGRAM_ID
+from src.core.constants import TARGET_USER_ID
 from src.core.enums import PurchaseType
 from src.telegram.states import DashboardUser, MainMenu, Subscription
 
@@ -31,7 +31,7 @@ class RedirectImpl(Redirect):
         )
         logger.info(f"User '{telegram_id}' redirected to main menu")
 
-    async def to_user_editor(self, telegram_id: int, target_telegram_id: int) -> None:
+    async def to_user_editor(self, telegram_id: int, target_user_id: int) -> None:
         bg_manager = self.bg_manager_factory.bg(
             bot=self.bot,
             user_id=telegram_id,
@@ -40,7 +40,7 @@ class RedirectImpl(Redirect):
 
         await bg_manager.start(
             state=DashboardUser.MAIN,
-            data={TARGET_TELEGRAM_ID: target_telegram_id},
+            data={TARGET_USER_ID: target_user_id},
             mode=StartMode.RESET_STACK,
             show_mode=ShowMode.DELETE_AND_SEND,
         )

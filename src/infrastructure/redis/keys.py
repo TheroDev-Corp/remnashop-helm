@@ -34,10 +34,31 @@ class LatestNotifiedVersionKey(StorageKey, prefix="latest_notified_version"):
     version: str
 
 
+@dataclass(frozen=True)
+class WelcomedVersionKey(StorageKey, prefix="welcomed_version"):
+    version: str
+
+
 class PaymentWaitlistKey(StorageKey, prefix="payment_waitlist"): ...
+
+
+class RecentActivityKey(StorageKey, prefix="recent_activity"): ...
 
 
 class ImportRunningKey(StorageKey, prefix="import_running"): ...
 
 
-class SyncRunningKey(StorageKey, prefix="sync_running"): ...
+class SyncPanelRunningKey(StorageKey, prefix="sync_panel_running"): ...
+
+
+class SyncBotRunningKey(StorageKey, prefix="sync_bot_running"): ...
+
+
+@dataclass(frozen=True)
+class RefreshTokenKey(StorageKey, prefix="refresh"):
+    token: str
+
+
+@dataclass(frozen=True)
+class UserTokensKey(StorageKey, prefix="user_tokens"):
+    user_id: int

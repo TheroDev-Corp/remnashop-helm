@@ -21,11 +21,7 @@ def downgrade() -> None:
 
     op.execute("""
         CREATE TYPE plan_traffic_limit_strategy_new AS ENUM (
-            SELECT enumlabel
-            FROM pg_enum
-            JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
-            WHERE typname = 'plan_traffic_limit_strategy'
-            AND enumlabel <> 'MONTH_ROLLING'
+            'NO_RESET', 'DAY', 'WEEK', 'MONTH'
         )
     """)
 

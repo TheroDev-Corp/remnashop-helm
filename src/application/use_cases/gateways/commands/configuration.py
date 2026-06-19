@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import get_type_hints
 
 from adaptix import Retort
 from loguru import logger
@@ -106,7 +107,7 @@ class UpdatePaymentGatewaySettings(Interactor[UpdatePaymentGatewaySettingsDto, N
 
             try:
                 settings_type = type(gateway.settings)
-                field_type = settings_type.__annotations__.get(data.field_name)
+                field_type = get_type_hints(settings_type).get(data.field_name)
 
                 if not field_type:
                     raise ValueError(
@@ -126,3 +127,46 @@ class UpdatePaymentGatewaySettings(Interactor[UpdatePaymentGatewaySettingsDto, N
             except ValueError as e:
                 logger.warning(f"{actor.log} Invalid value for field '{data.field_name}': {e}")
                 raise
+
+
+@dataclass(frozen=True)
+class ResetPaymentGatewaySettingsDto:
+    gateway_id: int
+    field_name: str
+
+
+class ResetPaymentGatewaySettingsField(Interactor[ResetPaymentGatewaySettingsDto, bool]):
+    required_permission = Permission.REMNASHOP_GATEWAYS
+
+    def __init__(self, uow: UnitOfWork, gateway_dao: PaymentGatewayDao) -> None:
+        self.uow = uow
+        self.gateway_dao = gateway_dao
+
+    async def _execute(self, actor: UserDto, data: ResetPaymentGatewaySettingsDto) -> bool:
+        async with self.uow:
+            gateway = await self.gateway_dao.get_by_id(data.gateway_id)
+
+            if not gateway or not gateway.settings:
+                raise GatewayNotConfiguredError(f"Gateway '{data.gateway_id}' is not configured")
+
+            settings_type = type(gateway.settings)
+            if data.field_name not in get_type_hints(settings_type):
+                raise ValueError(
+                    f"Field '{data.field_name}' not found in {settings_type.__name__}"
+                )
+
+            setattr(gateway.settings, data.field_name, None)
+
+            deactivated = False
+            if gateway.is_active and not gateway.settings.is_configured:
+                gateway.is_active = False
+                deactivated = True
+
+            await self.gateway_dao.update(gateway)
+            await self.uow.commit()
+
+        logger.info(
+            f"{actor.log} Reset '{data.field_name}' for gateway '{data.gateway_id}' "
+            f"(deactivated={deactivated})"
+        )
+        return deactivated

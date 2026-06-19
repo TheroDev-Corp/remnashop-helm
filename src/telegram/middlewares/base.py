@@ -1,6 +1,5 @@
 import time
 from abc import ABC, abstractmethod
-from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable, ClassVar, Final, Optional
 
 from aiogram import BaseMiddleware, Router
@@ -19,36 +18,29 @@ DEFAULT_UPDATE_TYPES: Final[list[MiddlewareEventType]] = [
 class EventTypedMiddleware(BaseMiddleware, ABC):
     __event_types__: ClassVar[list[MiddlewareEventType]] = DEFAULT_UPDATE_TYPES
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._inner_duration: float = 0.0
-
-    @asynccontextmanager
-    async def measure_inner(self) -> Any:
-        start = time.perf_counter()
-        try:
-            yield
-        finally:
-            self._inner_duration = time.perf_counter() - start
-
     async def __call__(
         self,
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
+        inner_duration: list[float] = [0.0]  # list — mutable, safe in closure
+
         async def wrapped_handler(event: TelegramObject, data: dict[str, Any]) -> Any:
-            async with self.measure_inner():
+            start = time.perf_counter()
+            try:
                 return await handler(event, data)
+            finally:
+                inner_duration[0] = time.perf_counter() - start
 
         start_ts = time.perf_counter()
         result = await self.middleware_logic(wrapped_handler, event, data)
         total_duration = time.perf_counter() - start_ts
-        pure_mw_duration = total_duration - self._inner_duration
+        pure_mw_duration = total_duration - inner_duration[0]
 
         logger.debug(
             f"Middleware '{self.__class__.__name__}' executed in {pure_mw_duration:.4f}s "
-            f"(inner chain '{self._inner_duration:.4f}s')"
+            f"(inner chain '{inner_duration[0]:.4f}s')"
         )
 
         return result

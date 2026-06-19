@@ -1,7 +1,8 @@
 import dataclasses
 import hashlib
+import secrets
 import string
-from typing import Any, Final
+from typing import Any, Awaitable, Callable, Final, Optional
 
 from cryptography.fernet import Fernet
 from loguru import logger
@@ -74,32 +75,20 @@ class CryptographerImpl(Cryptographer):
         logger.debug("Generated sha256 hash for data")
         return hashed_data
 
-    def base62_encode(self, number: int) -> str:
-        if number == 0:
-            return self._ALPHABET[0]
-
-        arr = []
-        base = len(self._ALPHABET)
-        temp_number = number
-
-        while temp_number:
-            temp_number, rem = divmod(temp_number, base)
-            arr.append(self._ALPHABET[rem])
-
-        arr.reverse()
-        result = "".join(arr)
-        logger.debug(f"Encoded number '{number}' to base62 '{result}'")
-        return result
-
     def is_encrypted(self, value: str) -> bool:
         return isinstance(value, str) and value.startswith(ENCRYPTED_PREFIX)
 
-    def generate_short_code(self, data: Any, length: int = 6) -> str:
-        payload = f"{data}:{self.config.crypt_key.get_secret_value()}"
-        digest = hashlib.sha256(payload.encode("utf-8")).digest()
-        code_int = int.from_bytes(digest[:6], "big")
-        full_code = self.base62_encode(code_int)
-
-        result = full_code[:length].rjust(length, "0")
-        logger.debug(f"Short code '{result}' generated for data '{data}'")
+    def generate_random_code(self, length: int = 6) -> str:
+        result = "".join(secrets.choice(self._ALPHABET) for _ in range(length))
+        logger.debug(f"Random code of length {length} generated")
         return result
+
+    async def generate_unique_code(
+        self,
+        is_taken: Callable[[str], Awaitable[Optional[Any]]],
+        length: int = 6,
+    ) -> str:
+        while True:
+            code = self.generate_random_code(length)
+            if not await is_taken(code):
+                return code

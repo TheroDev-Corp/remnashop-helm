@@ -7,7 +7,7 @@ from loguru import logger
 
 @dataclass(kw_only=True)
 class BaseDto:
-    id: Optional[int] = field(default=None)
+    id: int = field(default=0)
 
 
 @dataclass(kw_only=True)

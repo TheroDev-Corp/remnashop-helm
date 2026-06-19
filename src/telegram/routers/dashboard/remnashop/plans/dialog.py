@@ -3,16 +3,6 @@ from uuid import UUID
 from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import (
-    Button,
-    Column,
-    CopyText,
-    ListGroup,
-    Row,
-    Select,
-    Start,
-    SwitchTo,
-)
 from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
@@ -22,6 +12,16 @@ from src.core.enums import BannerName, Currency, PlanAvailability, PlanType
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import DashboardRemnashop, RemnashopPlans
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import (
+    Button,
+    Column,
+    CopyText,
+    ListGroup,
+    Row,
+    Select,
+    Start,
+    SwitchTo,
+)
 
 from .getters import (
     allowed_users_getter,
@@ -195,8 +195,8 @@ configurator = Window(
     I18nFormat("msg-plan-configurator"),
     Row(
         Button(
-            text=I18nFormat("btn-plans.active", is_active=F["is_active"]),
-            id="toggle_active",
+            text=I18nFormat("btn-plans.active-toggle", is_active=F["is_active"]),
+            id="active_toggle",
             on_click=on_active_toggle,
         ),
     ),
@@ -274,7 +274,7 @@ configurator = Window(
     ),
     Row(
         Button(
-            text=I18nFormat("btn-plans.create"),
+            text=I18nFormat("btn-plans.create-confirm"),
             id="create",
             on_click=on_plan_confirm,
             style=Style(ButtonStyle.SUCCESS),

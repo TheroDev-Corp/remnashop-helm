@@ -33,15 +33,15 @@ class ParsePlansImport(Interactor[str, list[PlanDto]]):
             raise ValueError("Import file is empty")
 
         for plan in plans:
-            plan.id = None
+            plan.id = 0
             plan.created_at = None
             plan.updated_at = None
 
             for duration in plan.durations:
-                duration.id = None
+                duration.id = 0
 
                 for price in duration.prices:
-                    price.id = None
+                    price.id = 0
 
         logger.info(f"{actor.log} Successfully parsed '{len(plans)}' plans from import")
         return plans
@@ -62,15 +62,15 @@ class ExportPlans(Interactor[list[int], str]):
             plan = await self.plan_dao.get_by_id(plan_id)
 
             if plan:
-                plan.id = None
+                plan.id = 0
                 plan.created_at = None
                 plan.updated_at = None
 
                 for duration in plan.durations:
-                    duration.id = None
+                    duration.id = 0
 
                     for price in duration.prices:
-                        price.id = None
+                        price.id = 0
 
                 exported_data.append(self.retort.dump(plan))
 

@@ -6,9 +6,9 @@ from src.application.common.dao import SettingsDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import SettingsDto, UserDto
-from src.core.constants import T_ME
 from src.core.enums import AccessRequirements
-from src.core.utils.validators import is_valid_url, is_valid_username
+from src.core.utils.converters import normalize_channel_id
+from src.core.utils.validators import is_invite_link, is_valid_url, is_valid_username
 
 
 class ToggleConditionRequirement(Interactor[AccessRequirements, None]):
@@ -19,19 +19,19 @@ class ToggleConditionRequirement(Interactor[AccessRequirements, None]):
         self.settings_dao = settings_dao
 
     async def _execute(self, actor: UserDto, condition_type: AccessRequirements) -> None:
-        settings = await self.settings_dao.get()
-
-        if condition_type == AccessRequirements.RULES:
-            settings.requirements.rules_required = not settings.requirements.rules_required
-            new_state = settings.requirements.rules_required
-        elif condition_type == AccessRequirements.CHANNEL:
-            settings.requirements.channel_required = not settings.requirements.channel_required
-            new_state = settings.requirements.channel_required
-        else:
-            logger.error(f"{actor.log} Tried to toggle unknown condition '{condition_type}'")
-            return
-
         async with self.uow:
+            settings = await self.settings_dao.get()
+
+            if condition_type == AccessRequirements.RULES:
+                settings.requirements.rules_required = not settings.requirements.rules_required
+                new_state = settings.requirements.rules_required
+            elif condition_type == AccessRequirements.CHANNEL:
+                settings.requirements.channel_required = not settings.requirements.channel_required
+                new_state = settings.requirements.channel_required
+            else:
+                logger.error(f"{actor.log} Tried to toggle unknown condition '{condition_type}'")
+                return
+
             await self.settings_dao.update(settings)
             await self.uow.commit()
 
@@ -76,28 +76,26 @@ class UpdateChannelRequirement(Interactor[str, None]):
 
     async def _execute(self, actor: UserDto, input_text: str) -> None:
         input_text = input_text.strip()
-        settings = await self.settings_dao.get()
 
         if input_text.isdigit() or (input_text.startswith("-") and input_text[1:].isdigit()):
-            await self._handle_id_input(input_text, settings)
-            await self.notifier.notify_user(actor, i18n_key="ntf-common.value-updated")
-        elif is_valid_username(input_text) or input_text.startswith(T_ME):
-            settings.requirements.channel_link = SecretStr(input_text)
-            await self.notifier.notify_user(actor, i18n_key="ntf-common.value-updated")
-
+            async with self.uow:
+                settings = await self.settings_dao.get()
+                await self._handle_id_input(input_text, settings)
+                await self.settings_dao.update(settings)
+                await self.uow.commit()
+        elif is_valid_username(input_text) or is_invite_link(input_text):
+            async with self.uow:
+                settings = await self.settings_dao.get()
+                settings.requirements.channel_link = SecretStr(input_text)
+                await self.settings_dao.update(settings)
+                await self.uow.commit()
         else:
             logger.warning(f"{actor.log} Provided invalid channel format: '{input_text}'")
             await self.notifier.notify_user(actor, i18n_key="ntf-common.invalid-value")
-
-        async with self.uow:
-            await self.settings_dao.update(settings)
-            await self.uow.commit()
+            return
 
         logger.info(f"{actor.log} Updated channel requirement")
+        await self.notifier.notify_user(actor, i18n_key="ntf-common.value-updated")
 
     async def _handle_id_input(self, text: str, settings: SettingsDto) -> None:
-        channel_id = int(text)
-        if not text.startswith("-100") and not text.startswith("-"):
-            channel_id = int(f"-100{text}")
-
-        settings.requirements.channel_id = channel_id
+        settings.requirements.channel_id = normalize_channel_id(text)

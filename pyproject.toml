@@ -7,7 +7,6 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "greenlet>=3.2.4",
     "uvicorn>=0.38.0",
     "fastapi>=0.120.2",
     "python-multipart>=0.0.22",
@@ -22,7 +21,7 @@ dependencies = [
     #
     "asyncpg~=0.30.0",
     "alembic~=1.16.5",
-    "sqlalchemy[mypy]>=2.0.0",
+    "sqlalchemy>=2.0.0",
     "redis~=7.0.0",
     "taskiq[orjson]~=0.12.1",
     "taskiq-redis~=1.2.1",
@@ -32,10 +31,12 @@ dependencies = [
     "msgspec~=0.19.0",
     "cryptography>=46.0.3",
     "qrcode[pil]>=8.2",
+    "pyjwt>=2.13.0",
+    "greenlet>=3.3.0",
 ]
 
 [tool.uv.sources]
-remnapy = { git = "https://github.com/snoups/remnapy", rev = "b712d1d" }
+remnapy = { git = "https://github.com/snoups/remnapy", rev = "95e15ed" }
 
 [project.urls]
 homepage = "https://t.me/@remna_shop"
@@ -44,6 +45,7 @@ repository = "https://github.com/snoups/remnashop"
 [dependency-groups]
 dev = [
     "aiogram-dialog[tools]~=2.5.0",
+    "sqlalchemy[mypy]>=2.0.0",
     "mypy>=1.18.2",
     "ruff>=0.14.2",
     "pytest>=8.4.2",
@@ -74,6 +76,9 @@ lint.select = [
 lint.ignore = ["N805"]
 exclude = ["venv", ".venv", ".idea"]
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.mypy]
 packages = ["src"]
@@ -94,7 +99,13 @@ extra_checks = true
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["fluentogram.*", "remnawave.*", "qrcode.*", "remnapy.*"]
+module = [
+    "fluentogram.*",
+    "fluent_compiler.*",
+    "remnawave.*",
+    "qrcode.*",
+    "remnapy.*",
+]
 follow_untyped_imports = true
 
 [[tool.mypy.overrides]]

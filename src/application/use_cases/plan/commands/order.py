@@ -37,8 +37,7 @@ class MovePlanUp(Interactor[int, None]):
 
             for i, p in enumerate(plans, start=1):
                 if p.order_index != i:
-                    p.order_index = i
-                    await self.plan_dao.update(p)
+                    await self.plan_dao.set_order_index(p.id, i)
 
             await self.uow.commit()
 
@@ -98,8 +97,7 @@ class DeletePlan(Interactor[int, None]):
 
             for i, p in enumerate(plans, start=1):
                 if p.order_index != i:
-                    p.order_index = i
-                    await self.plan_dao.update(p)
+                    await self.plan_dao.set_order_index(p.id, i)
 
             await self.uow.commit()
 

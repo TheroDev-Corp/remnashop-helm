@@ -1,10 +1,11 @@
-from asyncio import Protocol
 from types import TracebackType
-from typing import Optional, Self, Type
+from typing import Awaitable, Callable, Optional, Protocol, Self, Type, TypeVar
+
+T = TypeVar("T")
 
 
 class UnitOfWork(Protocol):
-    async def __aenter__(self) -> Self: ...  # type: ignore[empty-body]
+    async def __aenter__(self) -> Self: ...
 
     async def __aexit__(
         self,
@@ -16,3 +17,11 @@ class UnitOfWork(Protocol):
     async def commit(self) -> None: ...
 
     async def rollback(self) -> None: ...
+
+    async def persist_with_unique_code(
+        self,
+        generate: Callable[[], Awaitable[str]],
+        persist: Callable[[str], Awaitable[T]],
+        column: str,
+        retries: int = 5,
+    ) -> T: ...

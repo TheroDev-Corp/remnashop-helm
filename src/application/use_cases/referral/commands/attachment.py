@@ -13,7 +13,7 @@ from src.core.enums import ReferralLevel
 
 @dataclass(frozen=True)
 class AttachReferralDto:
-    user_telegram_id: int
+    user_id: int
     referral_code: str
 
 
@@ -36,37 +36,39 @@ class AttachReferral(Interactor[AttachReferralDto, Optional[UserDto]]):
 
     async def _execute(self, actor: UserDto, data: AttachReferralDto) -> Optional[UserDto]:
         settings = await self.settings_dao.get()
+        if not settings.referral.enable:
+            logger.info("Referral skipped: referral system is disabled")
+            return None
+
         referrer = await self.user_dao.get_by_referral_code(data.referral_code)
 
         if not referrer:
             logger.info(f"Referral skipped: referrer not found for code '{data.referral_code}'")
             return None
 
-        if referrer.telegram_id == data.user_telegram_id:
+        if referrer.id == data.user_id:
             logger.warning(
-                f"Referral skipped: self-referral by user '{data.user_telegram_id}' "
+                f"Referral skipped: self-referral by user '{data.user_id}' "
                 f"with code '{data.referral_code}'"
             )
             return None
 
-        existing, parent = await self.referral_dao.get_referral_chain(data.user_telegram_id)
+        existing, parent = await self.referral_dao.get_referral_chain(data.user_id)
         if existing:
-            logger.info(f"Referral skipped: user '{data.user_telegram_id}' already referred")
+            logger.info(f"Referral skipped: user '{data.user_id}' already referred")
             return None
 
         level = self._define_referral_level(parent.level if parent else None)
 
         logger.info(
-            f"Referral detected '{referrer.telegram_id}' -> "
-            f"'{data.user_telegram_id}' with level '{level.name}'"
+            f"Referral detected '{referrer.remna_name}' -> "
+            f"'{data.user_id}' with level '{level.name}'"
         )
 
         async with self.uow:
-            referred = await self.user_dao.get_by_telegram_id(data.user_telegram_id)
+            referred = await self.user_dao.get_by_id(data.user_id)
             if not referred:
-                logger.warning(
-                    f"Referral skipped: referred user not found '{data.user_telegram_id}'"
-                )
+                logger.warning(f"Referral skipped: referred user not found '{data.user_id}'")
                 return None
 
             await self.referral_dao.create_referral(
@@ -78,10 +80,7 @@ class AttachReferral(Interactor[AttachReferralDto, Optional[UserDto]]):
             )
             await self.uow.commit()
 
-        if settings.referral.enable:
-            await self.event_publisher.publish(
-                ReferralAttachedEvent(user=referrer, name=referred.name)
-            )
+        await self.event_publisher.publish(ReferralAttachedEvent(user=referrer, name=referred.name))
 
         return referrer
 

@@ -17,6 +17,8 @@ from src.core.enums import (
     PaymentGatewayType,
     PlanAvailability,
     PlanType,
+    PromocodeAvailability,
+    PromocodeRewardType,
     PurchaseType,
     ReferralAccrualStrategy,
     ReferralLevel,
@@ -52,6 +54,8 @@ mapper_registry = registry(
         ReferralLevel: Enum(ReferralLevel, name="referral_level"),
         ReferralRewardStrategy: Enum(ReferralRewardStrategy, name="referral_reward_strategy"),
         ReferralRewardType: Enum(ReferralRewardType, name="referral_reward_type"),
+        PromocodeRewardType: Enum(PromocodeRewardType, name="promocode_reward_type"),
+        PromocodeAvailability: Enum(PromocodeAvailability, name="promocode_availability"),
     }
 )
 

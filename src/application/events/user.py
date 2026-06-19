@@ -26,14 +26,9 @@ class SubscriptionLimitedEvent(UserEvent):
         return "event-subscription.limited"
 
     def as_payload(self) -> "MessagePayloadDto":
-        from src.telegram.keyboards import get_buy_keyboard, get_renew_keyboard  # noqa: PLC0415
-
-        keyboard = get_buy_keyboard() if self.is_trial else get_renew_keyboard()
-
         return MessagePayloadDto(
             i18n_key=self.event_key,
             i18n_kwargs={**asdict(self)},
-            reply_markup=keyboard,
             disable_default_markup=False,
             delete_after=None,
         )
@@ -53,14 +48,9 @@ class SubscriptionExpiredEvent(UserEvent):
         return "event-subscription.expired"
 
     def as_payload(self) -> "MessagePayloadDto":
-        from src.telegram.keyboards import get_buy_keyboard, get_renew_keyboard  # noqa: PLC0415
-
-        keyboard = get_buy_keyboard() if self.is_trial else get_renew_keyboard()
-
         return MessagePayloadDto(
             i18n_key=self.event_key,
             i18n_kwargs={**asdict(self)},
-            reply_markup=keyboard,
             disable_default_markup=False,
             delete_after=None,
         )
@@ -81,14 +71,9 @@ class SubscriptionExpiredAgoEvent(UserEvent):
         return "event-subscription.expired-ago"
 
     def as_payload(self) -> "MessagePayloadDto":
-        from src.telegram.keyboards import get_buy_keyboard, get_renew_keyboard  # noqa: PLC0415
-
-        keyboard = get_buy_keyboard() if self.is_trial else get_renew_keyboard()
-
         return MessagePayloadDto(
             i18n_key=self.event_key,
             i18n_kwargs={**asdict(self), "value": self.day},
-            reply_markup=keyboard,
             disable_default_markup=False,
             delete_after=None,
         )
@@ -109,17 +94,28 @@ class SubscriptionExpiresEvent(UserEvent):
         return "event-subscription.expiring"
 
     def as_payload(self) -> "MessagePayloadDto":
-        from src.telegram.keyboards import get_buy_keyboard, get_renew_keyboard  # noqa: PLC0415
-
-        keyboard = get_buy_keyboard() if self.is_trial else get_renew_keyboard()
-
         return MessagePayloadDto(
             i18n_key=self.event_key,
             i18n_kwargs={**asdict(self), "value": self.day},
-            reply_markup=keyboard,
             disable_default_markup=False,
             delete_after=None,
         )
+
+
+@dataclass(frozen=True, kw_only=True)
+class TorrentBlockedEvent(UserEvent):
+    notification_type: NotificationType = field(
+        default=UserNotificationType.TORRENT_BLOCKED,
+        init=False,
+    )
+
+    node_name: str
+    block_duration: Any
+    support_url: str
+
+    @property
+    def event_key(self) -> str:
+        return "event-torrent-blocker.user-blocked"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -169,10 +165,31 @@ class ReferralRewardReceivedEvent(ReferralRewardEvent):
 @dataclass(frozen=True, kw_only=True)
 class ReferralRewardFailedEvent(ReferralRewardEvent):
     notification_type: NotificationType = field(
-        default=UserNotificationType.REFERRAL_REWARD_RECEIVED,
+        default=UserNotificationType.REFERRAL_REWARD_FAILED,
         init=True,
     )
 
     @property
     def event_key(self) -> str:
         return "event-referral.reward-failed"
+
+
+@dataclass(frozen=True, kw_only=True)
+class UserNotConnectedEvent(UserEvent):
+    notification_type: NotificationType = field(
+        default=UserNotificationType.NOT_CONNECTED,
+        init=False,
+    )
+
+    support_url: str
+
+    @property
+    def event_key(self) -> str:
+        return "event-subscription.not-connected"
+
+    def as_payload(self) -> "MessagePayloadDto":
+        return MessagePayloadDto(
+            i18n_key=self.event_key,
+            disable_default_markup=True,
+            delete_after=None,
+        )

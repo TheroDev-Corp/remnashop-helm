@@ -5,13 +5,11 @@ from adaptix import Retort
 from aiogram_dialog import DialogManager
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
-from remnapy import RemnawaveSDK
 from remnapy.enums.users import TrafficLimitStrategy
 
-from src.application.common import TranslatorRunner
+from src.application.common import BotService, Remnawave, TranslatorRunner
 from src.application.common.dao import PlanDao
 from src.application.dto import PlanDto, PlanDurationDto, PlanPriceDto
-from src.application.services import BotService
 from src.core.enums import Currency, PlanAvailability, PlanType
 
 
@@ -19,7 +17,6 @@ from src.core.enums import Currency, PlanAvailability, PlanType
 async def plans_getter(
     dialog_manager: DialogManager,
     plan_dao: FromDishka[PlanDao],
-    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     plans: list[PlanDto] = await plan_dao.get_all()
@@ -27,7 +24,7 @@ async def plans_getter(
     formatted_plans = [
         {
             "id": plan.id,
-            "name": i18n.get(plan.name),
+            "name": plan.name,
             "is_active": plan.is_active,
         }
         for plan in plans
@@ -43,7 +40,6 @@ async def plans_getter(
 async def export_getter(
     dialog_manager: DialogManager,
     plan_dao: FromDishka[PlanDao],
-    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     plans: list[PlanDto] = await plan_dao.get_all()
@@ -52,7 +48,7 @@ async def export_getter(
     formatted_plans = [
         {
             "id": plan.id,
-            "name": i18n.get(plan.name),
+            "name": plan.name,
             "selected": plan.id in selected_plans,
         }
         for plan in plans
@@ -67,14 +63,15 @@ async def export_getter(
 async def configurator_getter(
     dialog_manager: DialogManager,
     bot_service: FromDishka[BotService],
-    i18n: FromDishka[TranslatorRunner],
     retort: FromDishka[Retort],
+    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     raw_plan = dialog_manager.dialog_data.get(PlanDto.__name__)
 
     if raw_plan is None:
         plan = PlanDto(
+            name=i18n.get("plan-default-name"),
             durations=[
                 PlanDurationDto(
                     days=7,
@@ -115,7 +112,7 @@ async def configurator_getter(
         plan = retort.load(raw_plan, PlanDto)
 
     helpers = {
-        "name": i18n.get(plan.name),
+        "name": plan.name,
         "is_edit": dialog_manager.dialog_data.get("is_edit", False),
         "is_unlimited_traffic": plan.is_unlimited_traffic,
         "is_unlimited_devices": plan.is_unlimited_devices,
@@ -256,20 +253,21 @@ async def allowed_users_getter(
     **kwargs: Any,
 ) -> dict[str, Any]:
     plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
-    return {"allowed_users": plan.allowed_user_ids if plan.allowed_user_ids else []}
+    combined: list[str] = [f"tg:{tg_id}" for tg_id in plan.allowed_telegram_ids]
+    combined += [f"em:{email}" for email in plan.allowed_emails]
+    return {"allowed_users": combined}
 
 
 @inject
 async def squads_getter(
     dialog_manager: DialogManager,
     retort: FromDishka[Retort],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave: FromDishka[Remnawave],
     **kwargs: Any,
 ) -> dict[str, Any]:
     plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
 
-    internal_response = await remnawave_sdk.internal_squads.get_internal_squads()
-    internal_dict = {s.uuid: s.name for s in internal_response.internal_squads}
+    internal_dict = {s.uuid: s.name for s in await remnawave.get_internal_squads()}
 
     if not plan.internal_squads:
         internal_squads_data: Union[str, bool] = False
@@ -278,8 +276,7 @@ async def squads_getter(
             internal_dict.get(squad, str(squad)) for squad in plan.internal_squads
         )
 
-    external_response = await remnawave_sdk.external_squads.get_external_squads()
-    external_dict = {s.uuid: s.name for s in external_response.external_squads}
+    external_dict = {s.uuid: s.name for s in await remnawave.get_external_squads()}
     external_squad_data = external_dict.get(plan.external_squad) if plan.external_squad else False
 
     return {
@@ -292,28 +289,18 @@ async def squads_getter(
 async def internal_squads_getter(
     dialog_manager: DialogManager,
     retort: FromDishka[Retort],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave: FromDishka[Remnawave],
     **kwargs: Any,
 ) -> dict[str, Any]:
     plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
-
-    result = await remnawave_sdk.internal_squads.get_internal_squads()
-    existing_squad_uuids = {squad.uuid for squad in result.internal_squads}
-
-    if plan.internal_squads:
-        plan_squad_uuids_set = set(plan.internal_squads)
-        valid_squad_uuids_set = plan_squad_uuids_set.intersection(existing_squad_uuids)
-        plan.internal_squads = list(valid_squad_uuids_set)
-
-    dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(plan)
 
     squads = [
         {
             "uuid": squad.uuid,
             "name": squad.name,
-            "selected": True if squad.uuid in plan.internal_squads else False,
+            "selected": squad.uuid in plan.internal_squads,
         }
-        for squad in result.internal_squads
+        for squad in await remnawave.get_internal_squads()
     ]
 
     return {
@@ -325,26 +312,18 @@ async def internal_squads_getter(
 async def external_squads_getter(
     dialog_manager: DialogManager,
     retort: FromDishka[Retort],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave: FromDishka[Remnawave],
     **kwargs: Any,
 ) -> dict[str, Any]:
     plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
-
-    result = await remnawave_sdk.external_squads.get_external_squads()
-    existing_squad_uuids = {squad.uuid for squad in result.external_squads}
-
-    if plan.external_squad and plan.external_squad not in existing_squad_uuids:
-        plan.external_squad = None
-
-    dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(plan)
 
     squads = [
         {
             "uuid": squad.uuid,
             "name": squad.name,
-            "selected": True if squad.uuid == plan.external_squad else False,
+            "selected": squad.uuid == plan.external_squad,
         }
-        for squad in result.external_squads
+        for squad in await remnawave.get_external_squads()
     ]
 
     return {

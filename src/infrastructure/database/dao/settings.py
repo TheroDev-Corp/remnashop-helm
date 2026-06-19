@@ -34,11 +34,11 @@ class SettingsDaoImpl(SettingsDao, BaseDaoImpl):
 
     async def create_default(self) -> SettingsDto:
         settings_data = self.retort.dump(SettingsDto())
+        settings_data.pop("id", None)
         db_settings = Settings(**settings_data)
         self.session.add(db_settings)
 
         await self.session.flush()
-        await self.session.commit()
 
         logger.debug("Created default settings")
         return self._convert_to_dto(db_settings)

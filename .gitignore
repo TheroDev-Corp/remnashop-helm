@@ -9,6 +9,9 @@ traefik
 logs/*
 !logs/.gitkeep
 .history
+.claude
+CLAUDE.md
+docs/
 
 # Environment
 .venv/
@@ -25,6 +28,17 @@ __pycache__/
 .pytest_cache/
 .coverage/
 
+# Coverage
+.coverage
+htmlcov/
+
+# Backups
+backups/*
+!backups/.gitkeep
+
+# Logs
+*.log
+
 # Build
 build/
 _build/
@@ -32,3 +46,4 @@ dist/
 site/
 *.egg-info/
 *.egg
+frontend/

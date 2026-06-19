@@ -16,6 +16,8 @@ class Deeplink(StrEnum):
     REFERRAL = "ref"
     PLAN = "plan"
     INVITE = "invite"
+    ADVERTISING = "ad"
+    PROMOCODE = "promo"
 
     def build_url(self, base_url: str, data: Optional[str]) -> str:
         if not data:
@@ -35,6 +37,7 @@ class ButtonType(UpperStrEnum):
     URL = auto()
     COPY = auto()
     WEB_APP = auto()
+    TEXT = auto()
 
 
 class BroadcastStatus(UpperStrEnum):
@@ -82,6 +85,7 @@ class PaymentGatewayType(UpperStrEnum):
     TELEGRAM_STARS = auto()
     YOOKASSA = auto()
     YOOMONEY = auto()
+    VALUTIX = auto()
     CRYPTOMUS = auto()
     HELEKET = auto()
     CRYPTOPAY = auto()
@@ -121,6 +125,22 @@ class ReferralRewardType(UpperStrEnum):
     EXTRA_DAYS = auto()
 
 
+class PromocodeRewardType(UpperStrEnum):
+    DURATION = auto()
+    TRAFFIC = auto()
+    DEVICES = auto()
+    SUBSCRIPTION = auto()
+    PERSONAL_DISCOUNT = auto()
+    PURCHASE_DISCOUNT = auto()
+
+
+class PromocodeAvailability(UpperStrEnum):
+    ALL = auto()
+    NEW = auto()
+    EXISTING = auto()
+    INVITED = auto()
+
+
 class ReferralLevel(IntEnum):
     FIRST = auto()
     SECOND = auto()
@@ -143,6 +163,7 @@ class BannerName(StrEnum):
     SUBSCRIPTION = auto()
     PROMOCODE = auto()
     REFERRAL = auto()
+    DEVICES = auto()
 
 
 class BannerFormat(StrEnum):
@@ -184,6 +205,21 @@ class MediaType(UpperStrEnum):
     PHOTO = auto()
     VIDEO = auto()
     DOCUMENT = auto()
+    GIF = auto()
+
+
+class OAuthProvider(StrEnum):
+    GOOGLE = auto()
+    YANDEX = auto()
+    VK = auto()
+
+
+class AuthType(StrEnum):
+    TELEGRAM = auto()
+    EMAIL = auto()
+    GOOGLE = auto()
+    YANDEX = auto()
+    VK = auto()
 
 
 class Role(IntEnum):
@@ -211,12 +247,14 @@ class SystemNotificationType(UpperStrEnum):
     BOT_UPDATE = auto()
     #
     USER_REGISTERED = auto()
+    BLACKLIST_ATTEMPT = auto()
     SUBSCRIPTION = auto()
     PROMOCODE_ACTIVATED = auto()
     TRIAL_ACTIVATED = auto()
     #
     NODE_STATUS_CHANGED = auto()
     NODE_TRAFFIC_REACHED = auto()
+    TORRENT_BLOCKER = auto()
     #
     USER_FIRST_CONNECTION = auto()
     USER_DEVICES_UPDATED = auto()
@@ -231,9 +269,12 @@ class UserNotificationType(UpperStrEnum):
     EXPIRED = auto()
     EXPIRED_1_DAY_AGO = auto()
     LIMITED = auto()
+    NOT_CONNECTED = auto()
+    TORRENT_BLOCKED = auto()
     #
     REFERRAL_ATTACHED = auto()
     REFERRAL_REWARD_RECEIVED = auto()
+    REFERRAL_REWARD_FAILED = auto()
 
 
 class AccessMode(UpperStrEnum):
@@ -281,6 +322,7 @@ class Currency(UpperStrEnum):
             PaymentGatewayType.ROBOKASSA: cls.RUB,
             PaymentGatewayType.URLPAY: cls.RUB,
             PaymentGatewayType.WATA: cls.RUB,
+            PaymentGatewayType.VALUTIX: cls.RUB,
         }
 
         try:
@@ -333,14 +375,19 @@ class Locale(StrEnum):
     AR = auto()  # Arabic
     AZ = auto()  # Azerbaijani
     BE = auto()  # Belarusian
+    BG = auto()  # Bulgarian
     CS = auto()  # Czech
+    DA = auto()  # Danish
     DE = auto()  # German
+    EL = auto()  # Greek
     EN = auto()  # English
     ES = auto()  # Spanish
     FA = auto()  # Persian
+    FI = auto()  # Finnish
     FR = auto()  # French
     HE = auto()  # Hebrew
     HI = auto()  # Hindi
+    HU = auto()  # Hungarian
     ID = auto()  # Indonesian
     IT = auto()  # Italian
     JA = auto()  # Japanese
@@ -348,15 +395,20 @@ class Locale(StrEnum):
     KO = auto()  # Korean
     MS = auto()  # Malay
     NL = auto()  # Dutch
+    NO = auto()  # Norwegian
     PL = auto()  # Polish
     PT = auto()  # Portuguese
     RO = auto()  # Romanian
     RU = auto()  # Russian
     SR = auto()  # Serbian
+    SV = auto()  # Swedish
+    TG = auto()  # Tajik
+    TH = auto()  # Thai
     TR = auto()  # Turkish
     UK = auto()  # Ukrainian
     UZ = auto()  # Uzbek
     VI = auto()  # Vietnamese
+    ZH = auto()  # Chinese
 
 
 class LogLevel(UpperStrEnum):

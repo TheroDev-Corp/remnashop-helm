@@ -26,7 +26,8 @@ class BroadcastDto(BaseDto, TrackableMixin, TimestampMixin):
 
 @dataclass(kw_only=True)
 class BroadcastMessageDto(BaseDto, TrackableMixin):
-    user_telegram_id: int
+    user_id: int
+    user_telegram_id: Optional[int] = None  # Telegram chat ID; None for web-only users
     message_id: Optional[int] = None
 
     status: BroadcastMessageStatus

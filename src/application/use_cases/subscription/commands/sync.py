@@ -1,6 +1,4 @@
 from loguru import logger
-from remnapy import RemnawaveSDK
-from remnapy.exceptions import NotFoundError
 
 from src.application.common import Interactor, Remnawave
 from src.application.common.dao import SubscriptionDao, UserDao
@@ -25,39 +23,38 @@ class CheckSubscriptionSyncState(Interactor[int, bool]):
         self,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave_sdk: RemnawaveSDK,
+        remnawave: Remnawave,
         match_subscription: MatchSubscription,
-    ):
+    ) -> None:
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
-        self.remnawave_sdk = remnawave_sdk
+        self.remnawave = remnawave
         self.match_subscription = match_subscription
 
-    async def _execute(self, actor: UserDto, data: int) -> bool:
-        target_user = await self.user_dao.get_by_telegram_id(data)
+    async def _execute(self, actor: UserDto, user_id: int) -> bool:
+        target_user = await self.user_dao.get_by_id(user_id)
         if not target_user:
-            raise ValueError(f"User '{data}' not found")
+            raise ValueError(f"User '{user_id}' not found")
 
-        bot_sub = await self.subscription_dao.get_current(data)
+        bot_sub = await self.subscription_dao.get_current(target_user.id)
 
-        try:
-            remna_results = await self.remnawave_sdk.users.get_users_by_telegram_id(
-                telegram_id=str(data)
-            )
-            remna_sub = (
-                RemnaSubscriptionDto.from_remna_user(remna_results[0]) if remna_results else None
-            )
-        except NotFoundError:
-            remna_sub = None
+        remna_user = None
+        if bot_sub:
+            remna_user = await self.remnawave.get_user_by_uuid(bot_sub.user_remna_id)
+        elif target_user.telegram_id:
+            remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
+            remna_user = remna_users[0] if remna_users else None
+
+        remna_sub = RemnaSubscriptionDto.from_remna_user(remna_user) if remna_user else None
 
         if not remna_sub and not bot_sub:
-            raise ValueError(f"{actor.log} No subscription data found to check for '{data}'")
+            raise ValueError(f"{actor.log} No subscription data found to check for '{user_id}'")
 
         if await self.match_subscription.system(MatchSubscriptionDto(bot_sub, remna_sub)):
-            logger.info(f"{actor.log} Subscription data for '{data}' is consistent")
+            logger.info(f"{actor.log} Subscription data for user '{user_id}' is consistent")
             return False
 
-        logger.info(f"{actor.log} Inconsistency detected for user '{data}'")
+        logger.info(f"{actor.log} Inconsistency detected for user '{user_id}'")
         return True
 
 
@@ -69,46 +66,53 @@ class SyncSubscriptionFromRemnawave(Interactor[int, None]):
         uow: UnitOfWork,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave_sdk: RemnawaveSDK,
         remnawave: Remnawave,
         sync_remna_user: SyncRemnaUser,
-    ):
+    ) -> None:
         self.uow = uow
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
-        self.remnawave_sdk = remnawave_sdk
         self.remnawave = remnawave
         self.sync_remna_user = sync_remna_user
 
-    async def _execute(self, actor: UserDto, data: int) -> None:
+    async def _execute(self, actor: UserDto, user_id: int) -> None:
         async with self.uow:
-            target_user = await self.user_dao.get_by_telegram_id(data)
+            target_user = await self.user_dao.get_by_id(user_id)
             if not target_user:
-                raise ValueError(f"User '{data}' not found")
+                raise ValueError(f"User '{user_id}' not found")
 
-            subscription = await self.subscription_dao.get_current(data)
-
-            try:
-                results = await self.remnawave_sdk.users.get_users_by_telegram_id(
-                    telegram_id=str(data)
+            subscription = await self.subscription_dao.get_current(target_user.id)
+            if not subscription:
+                remna_users = (
+                    await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
+                    if target_user.telegram_id
+                    else []
                 )
-                remna_user = results[0] if results else None
-            except NotFoundError:
-                remna_user = None
+                if not remna_users:
+                    logger.info(f"{actor.log} No subscription to sync for user '{user_id}'")
+                    return
+
+                await self.sync_remna_user.system(SyncRemnaUserDto(remna_users[0], creating=False))
+                logger.info(f"{actor.log} Imported subscription from panel for user '{user_id}'")
+                return
+
+            remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
 
             if not remna_user:
-                if subscription:
-                    await self.subscription_dao.update_status(
-                        subscription.id,  # type: ignore[arg-type]
-                        SubscriptionStatus.DELETED,
-                    )
-                await self.user_dao.clear_current_subscription(data)
+                await self.subscription_dao.update_status(
+                    subscription.id,
+                    SubscriptionStatus.DELETED,
+                )
+                await self.user_dao.clear_current_subscription(target_user.id)
                 logger.info(
-                    f"{actor.log} Deleted subscription for '{data}' because it missing in Remnawave"
+                    f"{actor.log} Deleted subscription for user '{user_id}' "
+                    f"because it missing in Remnawave"
                 )
             else:
                 await self.sync_remna_user.system(SyncRemnaUserDto(remna_user, creating=False))
-                logger.info(f"{actor.log} Synchronized subscription from remnapy for user '{data}'")
+                logger.info(
+                    f"{actor.log} Synchronized subscription from remnapy for user '{user_id}'"
+                )
 
             await self.uow.commit()
 
@@ -123,32 +127,32 @@ class SyncSubscriptionFromRemnashop(Interactor[int, None]):
         subscription_dao: SubscriptionDao,
         remnawave: Remnawave,
         sync_remna_user: SyncRemnaUser,
-    ):
+    ) -> None:
         self.uow = uow
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
         self.sync_remna_user = sync_remna_user
 
-    async def _execute(self, actor: UserDto, data: int) -> None:
+    async def _execute(self, actor: UserDto, user_id: int) -> None:
         async with self.uow:
-            target_user = await self.user_dao.get_by_telegram_id(data)
+            target_user = await self.user_dao.get_by_id(user_id)
             if not target_user:
-                raise ValueError(f"User '{data}' not found")
+                raise ValueError(f"User '{user_id}' not found")
 
-            subscription = await self.subscription_dao.get_current(data)
+            subscription = await self.subscription_dao.get_current(target_user.id)
 
             if not subscription:
-                remna_users = await self.remnawave.get_user_by_telegram_id(target_user.telegram_id)
-
-                if not remna_users:
-                    return
-
-                await self.remnawave.delete_user(remna_users[0].uuid)
-                logger.info(
-                    f"{actor.log} Deleted user '{remna_users[0].uuid}' from remnapy "
-                    f"due to missing local subscription"
-                )
+                if target_user.telegram_id:
+                    remna_users = await self.remnawave.get_users_by_telegram_id(
+                        target_user.telegram_id
+                    )
+                    if remna_users:
+                        await self.remnawave.delete_user(remna_users[0].uuid)
+                        logger.info(
+                            f"{actor.log} Deleted user '{remna_users[0].uuid}' from remnapy "
+                            f"due to missing local subscription"
+                        )
             else:
                 remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
 
@@ -158,7 +162,9 @@ class SyncSubscriptionFromRemnashop(Interactor[int, None]):
                         uuid=subscription.user_remna_id,
                         subscription=subscription,
                     )
-                    logger.info(f"{actor.log} Updated user '{data}' in Remnawave with local data")
+                    logger.info(
+                        f"{actor.log} Updated user '{user_id}' in Remnawave with local data"
+                    )
                 else:
                     created_user = await self.remnawave.create_user(
                         user=target_user,
@@ -167,6 +173,8 @@ class SyncSubscriptionFromRemnashop(Interactor[int, None]):
                     await self.sync_remna_user.system(
                         SyncRemnaUserDto(created_user, creating=False)
                     )
-                    logger.info(f"{actor.log} Recreated user '{data}' in Remnawave with local data")
+                    logger.info(
+                        f"{actor.log} Recreated user '{user_id}' in Remnawave with local data"
+                    )
 
             await self.uow.commit()

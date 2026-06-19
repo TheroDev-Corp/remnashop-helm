@@ -8,7 +8,7 @@ from loguru import logger
 
 from src.application.common import TranslatorRunner
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
-from src.application.dto import PlanDto, PriceDetailsDto, UserDto
+from src.application.dto import PaymentGatewayDto, PlanDto, PriceDetailsDto, TelegramUserDto
 from src.application.services import PricingService
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
@@ -23,14 +23,21 @@ from src.core.utils.i18n_helpers import (
 from src.telegram.states import Subscription
 
 
+def _get_gateway_title(i18n: TranslatorRunner, gateway: PaymentGatewayDto) -> str:
+    if gateway.settings and gateway.settings.display_name:
+        return gateway.settings.display_name
+
+    return i18n.get("gateway-type", gateway_type=gateway.type)
+
+
 @inject
 async def subscription_getter(
     dialog_manager: DialogManager,
-    user: UserDto,
+    user: TelegramUserDto,
     subscription_dao: FromDishka[SubscriptionDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
+    current_subscription = await subscription_dao.get_current(user.id)
     has_active = bool(current_subscription and not current_subscription.is_trial)
     is_unlimited = current_subscription.is_unlimited if current_subscription else False
     return {
@@ -42,7 +49,7 @@ async def subscription_getter(
 @inject
 async def plan_getter(
     dialog_manager: DialogManager,
-    user: UserDto,
+    user: TelegramUserDto,
     i18n: FromDishka[TranslatorRunner],
     plan_dao: FromDishka[PlanDao],
     subscription_dao: FromDishka[SubscriptionDao],
@@ -55,7 +62,7 @@ async def plan_getter(
     if not plan:
         raise ValueError(f"Plan with id '{plan_id}' not found")
 
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
+    current_subscription = await subscription_dao.get_current(user.id)
 
     if current_subscription:
         matched_plan = await match_plan.system(
@@ -83,7 +90,7 @@ async def plan_getter(
 @inject
 async def plans_getter(
     dialog_manager: DialogManager,
-    user: UserDto,
+    user: TelegramUserDto,
     i18n: FromDishka[TranslatorRunner],
     get_available_plans: FromDishka[GetAvailablePlans],
     **kwargs: Any,
@@ -106,7 +113,7 @@ async def plans_getter(
 @inject
 async def duration_getter(
     dialog_manager: DialogManager,
-    user: UserDto,
+    user: TelegramUserDto,
     retort: FromDishka[Retort],
     i18n: FromDishka[TranslatorRunner],
     settings_dao: FromDishka[SettingsDao],
@@ -141,6 +148,8 @@ async def duration_getter(
             }
         )
 
+    plan_is_modified = 1 if dialog_manager.dialog_data.get("plan_is_modified", False) else 0
+
     return {
         "plan": i18n.get(plan.name),
         "description": i18n.get(plan.description) if plan.description else False,
@@ -154,13 +163,14 @@ async def duration_getter(
         "only_single_plan": only_single_plan,
         "discount_percent": pricing_service.get_effective_discount(user),
         "is_personal_discount": pricing_service.is_largest_discount_personal(user),
+        "plan_is_modified": plan_is_modified,
     }
 
 
 @inject
 async def payment_method_getter(
     dialog_manager: DialogManager,
-    user: UserDto,
+    user: TelegramUserDto,
     retort: FromDishka[Retort],
     i18n: FromDishka[TranslatorRunner],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
@@ -186,10 +196,13 @@ async def payment_method_getter(
     payment_methods = []
     for gateway in gateways:
         raw_price = duration.get_price(gateway.currency)
-        price = pricing_service.calculate(user, raw_price, gateway.currency)
+        price = pricing_service.calculate(
+            user, raw_price, gateway.currency, apply_discount=not plan.is_trial
+        )
         payment_methods.append(
             {
                 "gateway_type": gateway.type,
+                "gateway_title": _get_gateway_title(i18n, gateway),
                 "final_amount": price.final_amount,
                 "original_amount": price.original_amount,
                 "discount_percent": price.discount_percent,
@@ -198,6 +211,8 @@ async def payment_method_getter(
         )
 
     key, kw = i18n_format_days(duration.days)
+
+    plan_is_modified = 1 if dialog_manager.dialog_data.get("plan_is_modified", False) else 0
 
     return {
         "plan": i18n.get(plan.name),
@@ -210,15 +225,18 @@ async def payment_method_getter(
         "final_amount": 0,
         "currency": "",
         "only_single_duration": only_single_duration,
-        "discount_percent": pricing_service.get_effective_discount(user),
-        "is_personal_discount": pricing_service.is_largest_discount_personal(user),
+        "discount_percent": 0 if plan.is_trial else pricing_service.get_effective_discount(user),
+        "is_personal_discount": (
+            False if plan.is_trial else pricing_service.is_largest_discount_personal(user)
+        ),
+        "plan_is_modified": plan_is_modified,
     }
 
 
 @inject
 async def confirm_getter(
     dialog_manager: DialogManager,
-    user: UserDto,
+    user: TelegramUserDto,
     retort: FromDishka[Retort],
     i18n: FromDishka[TranslatorRunner],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
@@ -235,6 +253,7 @@ async def confirm_getter(
     plan = retort.load(raw_plan, PlanDto)
     selected_duration = dialog_manager.dialog_data["selected_duration"]
     only_single_duration = dialog_manager.dialog_data.get("only_single_duration", False)
+    only_single_plan = dialog_manager.dialog_data.get("only_single_plan", False)
     is_free = dialog_manager.dialog_data.get("is_free", False)
     selected_payment_method = dialog_manager.dialog_data["selected_payment_method"]
     purchase_type = dialog_manager.dialog_data["purchase_type"]
@@ -254,6 +273,8 @@ async def confirm_getter(
     key, kw = i18n_format_days(duration.days)
     gateways = await payment_gateway_dao.get_active()
 
+    plan_is_modified = 1 if dialog_manager.dialog_data.get("plan_is_modified", False) else 0
+
     return {
         "purchase_type": purchase_type,
         "plan": i18n.get(plan.name),
@@ -263,6 +284,7 @@ async def confirm_getter(
         "traffic": i18n_format_traffic_limit(plan.traffic_limit),
         "period": i18n.get(key, **kw),
         "payment_method": selected_payment_method,
+        "payment_method_title": _get_gateway_title(i18n, payment_gateway),
         "final_amount": pricing.final_amount,
         "discount_percent": pricing.discount_percent,
         "original_amount": pricing.original_amount,
@@ -271,7 +293,9 @@ async def confirm_getter(
         "url": result_url,
         "only_single_gateway": len(gateways) == 1,
         "only_single_duration": only_single_duration,
+        "only_single_plan": only_single_plan,
         "is_free": is_free,
+        "plan_is_modified": plan_is_modified,
     }
 
 
@@ -279,18 +303,23 @@ async def confirm_getter(
 async def getter_connect(
     dialog_manager: DialogManager,
     config: AppConfig,
-    user: UserDto,
+    user: TelegramUserDto,
     subscription_dao: FromDishka[SubscriptionDao],
+    settings_dao: FromDishka[SettingsDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
+    current_subscription = await subscription_dao.get_current(user.id)
 
     if not current_subscription:
         raise ValueError(f"User '{user.telegram_id}' has no active subscription after purchase")
 
+    settings = await settings_dao.get()
+
     return {
         "is_mini_app": config.bot.is_mini_app,
+        "is_mini_app_reserve": config.bot.is_mini_app and settings.extra.mini_app_reserve,
         "connection_url": config.bot.mini_app_url or current_subscription.url,
+        "subscription_url": current_subscription.url,
         "connectable": True,
     }
 
@@ -299,16 +328,19 @@ async def getter_connect(
 async def success_payment_getter(
     dialog_manager: DialogManager,
     config: AppConfig,
-    user: UserDto,
+    user: TelegramUserDto,
     subscription_dao: FromDishka[SubscriptionDao],
+    settings_dao: FromDishka[SettingsDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
     start_data = cast(dict[str, Any], dialog_manager.start_data)
     purchase_type: PurchaseType = start_data["purchase_type"]
-    subscription = await subscription_dao.get_current(user.telegram_id)
+    subscription = await subscription_dao.get_current(user.id)
 
     if not subscription:
         raise ValueError(f"User '{user.telegram_id}' has no active subscription after purchase")
+
+    settings = await settings_dao.get()
 
     return {
         "purchase_type": purchase_type,
@@ -318,6 +350,8 @@ async def success_payment_getter(
         "expire_time": i18n_format_expire_time(subscription.expire_at),
         "added_duration": i18n_format_days(subscription.plan_snapshot.duration),
         "is_mini_app": config.bot.is_mini_app,
+        "is_mini_app_reserve": config.bot.is_mini_app and settings.extra.mini_app_reserve,
         "connection_url": config.bot.mini_app_url or subscription.url,
+        "subscription_url": subscription.url,
         "connectable": True,
     }
