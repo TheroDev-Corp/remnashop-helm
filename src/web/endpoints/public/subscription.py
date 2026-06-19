@@ -22,6 +22,7 @@ from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.remnawave.commands.management import (
     DeleteUserDevice,
     DeleteUserDeviceDto,
+    ReissueSubscription,
 )
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.enums import (
@@ -29,6 +30,7 @@ from src.core.enums import (
     PurchaseType,
     TransactionStatus,
 )
+from src.core.exceptions import CooldownError
 from src.web.schemas import (
     DeviceDeleteResponse,
     DeviceResponse,
@@ -40,6 +42,7 @@ from src.web.schemas import (
     PaymentInitResponse,
     PlanOfferResponse,
     PurchaseRequest,
+    ReissueResponse,
     SubscriptionInfoResponse,
     SubscriptionOffersResponse,
 )
@@ -169,14 +172,19 @@ async def delete_subscription_device(
     return DeviceDeleteResponse(deleted=deleted)
 
 
-# @router.post("/reissue", response_model=ReissueResponse)
-# @inject
-# async def reissue_current_subscription(
-#     user: CurrentUser,
-#     reissue_subscription: FromDishka[ReissueSubscription],
-# ) -> ReissueResponse:
-#     await reissue_subscription(user)
-#     return ReissueResponse(success=True)
+@router.post("/reissue", response_model=ReissueResponse)
+@inject
+async def reissue_current_subscription(
+    user: CurrentUser,
+    reissue_subscription: FromDishka[ReissueSubscription],
+) -> ReissueResponse:
+    try:
+        await reissue_subscription(user)
+    except CooldownError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    return ReissueResponse(success=True)
 
 
 @router.post("/purchase", response_model=PaymentInitResponse)
