@@ -27,6 +27,7 @@ class PaymentGatewayDto(BaseDto, TrackableMixin):
     @property
     def requires_webhook(self) -> bool:
         return self.type not in {
+            PaymentGatewayType.TELEGRAM_STARS,
             PaymentGatewayType.CRYPTOMUS,
             PaymentGatewayType.HELEKET,
             PaymentGatewayType.FREEKASSA,
@@ -54,6 +55,11 @@ class GatewaySettingsDto(TrackableMixin):
             for f in fields(self)
             if f.name not in {"type", "created_at", "updated_at"} and not f.name.startswith("_")
         ]
+
+
+@dataclass(kw_only=True)
+class TelegramStarsGatewaySettingsDto(GatewaySettingsDto):
+    type: Literal[PaymentGatewayType.TELEGRAM_STARS] = PaymentGatewayType.TELEGRAM_STARS
 
 
 @dataclass(kw_only=True)
@@ -161,6 +167,7 @@ class ValutixGatewaySettingsDto(GatewaySettingsDto):
 
 
 AnyGatewaySettingsDto = Union[
+    TelegramStarsGatewaySettingsDto,
     YooKassaGatewaySettingsDto,
     YooMoneyGatewaySettingsDto,
     CryptomusGatewaySettingsDto,

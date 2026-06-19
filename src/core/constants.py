@@ -56,6 +56,8 @@ TARGET_TELEGRAM_ID: Final[str] = "target_telegram_id"
 TARGET_USER_ID: Final[str] = "target_user_id"
 FROM_REFERRAL_USER_ID: Final[str] = "from_referral_user_id"
 
+INT32_MAX: Final[int] = 2_147_483_647
+
 TIMEZONE: Final[timezone] = timezone.utc
 DATETIME_VIEW_FORMAT: Final[str] = "%d.%m.%y %H:%M:%S"
 DATETIME_FILE_FORMAT: Final[str] = "%Y-%m-%d_%H-%M-%S"

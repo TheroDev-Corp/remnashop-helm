@@ -129,4 +129,5 @@ async def on_all_transaction_select(
         manager=dialog_manager,
         target_user_id=transaction.user_id,
         selected_transaction=transaction.payment_id,
+        origin="all_transactions",
     )

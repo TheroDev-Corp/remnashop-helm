@@ -475,6 +475,7 @@ async def transactions_getter(
 async def transaction_getter(
     dialog_manager: DialogManager,
     transaction_dao: FromDishka[TransactionDao],
+    user_dao: FromDishka[UserDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
     if TARGET_USER_ID not in dialog_manager.dialog_data:
@@ -485,9 +486,16 @@ async def transaction_getter(
         dialog_manager.dialog_data["selected_transaction"] = UUID(
             dialog_manager.start_data.get("selected_transaction")  # type: ignore[union-attr]
         )
+    if "transaction_origin" not in dialog_manager.dialog_data:
+        dialog_manager.dialog_data["transaction_origin"] = (
+            dialog_manager.start_data.get("origin")  # type: ignore[union-attr]
+            if dialog_manager.start_data
+            else None
+        ) or "user"
 
     target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
     selected_transaction = dialog_manager.dialog_data["selected_transaction"]
+    origin = dialog_manager.dialog_data["transaction_origin"]
     transaction = await transaction_dao.get_by_payment_id(selected_transaction)
 
     if not transaction:
@@ -495,7 +503,13 @@ async def transaction_getter(
             f"Transaction '{selected_transaction}' not found for user '{target_user_id}'"
         )
 
+    initiator = await user_dao.get_by_id(transaction.user_id)
+
     return {
+        "is_from_all_transactions": origin == "all_transactions",
+        "user_name": initiator.name if initiator else "—",
+        "user_telegram_id": (initiator.telegram_id if initiator else None) or 0,
+        "user_email": (initiator.email if initiator else None) or "—",
         "is_test": transaction.is_test,
         "is_trial_plan": transaction.plan_snapshot.is_trial,
         "payment_id": transaction.payment_id,

@@ -137,13 +137,16 @@ async def on_field_input(
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
 
+    # display_name may carry custom (premium) emoji, preserved as <tg-emoji> tags
+    value = message.html_text if selected_field == "display_name" else message.text
+
     try:
         await update_payment_gateway_settings(
             user,
             UpdatePaymentGatewaySettingsDto(
                 gateway_id=gateway_id,
                 field_name=selected_field,
-                value=message.text,
+                value=value,
             ),
         )
         await dialog_manager.switch_to(state=RemnashopGateways.SETTINGS)

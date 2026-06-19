@@ -91,12 +91,14 @@ async def start_user_transaction_window(
     manager: DialogManager,
     target_user_id: int,
     selected_transaction: UUID,
+    origin: str = "user",
 ) -> None:
     await manager.start(
         state=DashboardUser.TRANSACTION,
         data={
             TARGET_USER_ID: target_user_id,
             "selected_transaction": str(selected_transaction),
+            "origin": origin,
         },
         mode=StartMode.RESET_STACK,
     )
@@ -593,6 +595,15 @@ async def on_transaction_select(
 ) -> None:
     dialog_manager.dialog_data["selected_transaction"] = selected_transaction
     await dialog_manager.switch_to(state=DashboardUser.TRANSACTION)
+
+
+async def on_go_to_user(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+) -> None:
+    target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
+    await start_user_window(manager=dialog_manager, target_user_id=target_user_id)
 
 
 @inject

@@ -8,7 +8,7 @@ from magic_filter import F
 from src.core.enums import BannerName, SubscriptionStatus
 from src.telegram.keyboards import back_main_menu_button
 from src.telegram.routers.dashboard.broadcast.handlers import on_content_input, on_preview
-from src.telegram.states import DashboardUser, DashboardUsers
+from src.telegram.states import DashboardRemnashop, DashboardUser, DashboardUsers
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import (
     Button,
@@ -59,6 +59,7 @@ from .handlers import (
     on_external_squad_select,
     on_give_access,
     on_give_subscription,
+    on_go_to_user,
     on_internal_squad_select,
     on_personal_discount_input,
     on_personal_discount_select,
@@ -659,10 +660,26 @@ transaction = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-user-transaction-info"),
     Row(
+        Button(
+            text=I18nFormat("btn-goto.user-profile"),
+            id="go_to_user",
+            on_click=on_go_to_user,
+            when=F["is_from_all_transactions"],
+        ),
+    ),
+    Row(
         SwitchTo(
             text=I18nFormat("btn-back.general"),
             id="back",
             state=DashboardUser.TRANSACTIONS_LIST,
+            when=~F["is_from_all_transactions"],
+        ),
+        Start(
+            text=I18nFormat("btn-back.general"),
+            id="back_all_transactions",
+            state=DashboardRemnashop.TRANSACTIONS,
+            mode=StartMode.RESET_STACK,
+            when=F["is_from_all_transactions"],
         ),
     ),
     IgnoreUpdate(),

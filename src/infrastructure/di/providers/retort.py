@@ -41,6 +41,7 @@ from src.application.dto.payment_gateway import (
     PayMasterGatewaySettingsDto,
     PlategaGatewaySettingsDto,
     RoboKassaGatewaySettingsDto,
+    TelegramStarsGatewaySettingsDto,
     UrlPayGatewaySettingsDto,
     ValutixGatewaySettingsDto,
     WataGatewaySettingsDto,
@@ -102,6 +103,7 @@ class RetortProvider(Provider):
     ) -> ConversionRetort:
         def get_settings_dto(pg_type: PaymentGatewayType, settings_dict: dict) -> Any:
             type_mapping = {
+                PaymentGatewayType.TELEGRAM_STARS: TelegramStarsGatewaySettingsDto,
                 PaymentGatewayType.YOOKASSA: YooKassaGatewaySettingsDto,
                 PaymentGatewayType.YOOMONEY: YooMoneyGatewaySettingsDto,
                 PaymentGatewayType.CRYPTOMUS: CryptomusGatewaySettingsDto,
@@ -156,6 +158,7 @@ class RetortProvider(Provider):
                 *[
                     coercer(dict, dto_class, retort.get_loader(dto_class))
                     for dto_class in [
+                        TelegramStarsGatewaySettingsDto,
                         YooKassaGatewaySettingsDto,
                         YooMoneyGatewaySettingsDto,
                         CryptomusGatewaySettingsDto,

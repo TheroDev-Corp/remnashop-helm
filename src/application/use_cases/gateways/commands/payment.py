@@ -38,6 +38,7 @@ from src.application.dto.payment_gateway import (
     PaymentGatewayDto,
     PlategaGatewaySettingsDto,
     RoboKassaGatewaySettingsDto,
+    TelegramStarsGatewaySettingsDto,
     UrlPayGatewaySettingsDto,
     ValutixGatewaySettingsDto,
     WataGatewaySettingsDto,
@@ -90,6 +91,7 @@ class CreateDefaultPaymentGateway(Interactor[None, None]):
                 is_active = gateway_type == PaymentGatewayType.TELEGRAM_STARS
 
                 settings_map = {
+                    PaymentGatewayType.TELEGRAM_STARS: TelegramStarsGatewaySettingsDto,
                     PaymentGatewayType.YOOKASSA: YooKassaGatewaySettingsDto,
                     PaymentGatewayType.YOOMONEY: YooMoneyGatewaySettingsDto,
                     PaymentGatewayType.CRYPTOMUS: CryptomusGatewaySettingsDto,

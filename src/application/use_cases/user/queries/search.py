@@ -8,7 +8,7 @@ from src.application.common import Interactor
 from src.application.common.dao import TransactionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.dto import TransactionDto, UserDto
-from src.core.constants import REMNASHOP_PREFIX, WEB_PREFIX
+from src.core.constants import INT32_MAX, REMNASHOP_PREFIX, WEB_PREFIX
 
 
 @dataclass(frozen=True)
@@ -75,10 +75,13 @@ class SearchUsers(Interactor[SearchUsersDto, list[UserDto]]):
                 else:
                     logger.warning(f"Searched by Telegram ID '{numeric_id}', user not found")
 
-                user_by_id = await self.user_dao.get_by_id(numeric_id)
-                if user_by_id and user_by_id.id not in {u.id for u in found_users}:
-                    found_users.append(user_by_id)
-                    logger.info(f"Searched by internal ID '{numeric_id}', user found")
+                # users.id is a 32-bit serial; Telegram IDs exceed it and would raise
+                # an out-of-range error in the query, so only probe internal IDs in range.
+                if numeric_id <= INT32_MAX:
+                    user_by_id = await self.user_dao.get_by_id(numeric_id)
+                    if user_by_id and user_by_id.id not in {u.id for u in found_users}:
+                        found_users.append(user_by_id)
+                        logger.info(f"Searched by internal ID '{numeric_id}', user found")
 
             elif query.startswith(REMNASHOP_PREFIX):
                 remainder = query[len(REMNASHOP_PREFIX) :]

@@ -706,6 +706,10 @@ msg-user-transaction-info =
     { hdr-payment }
     <blockquote>
     • <b>ID</b>: <code>{ $payment_id }</code>
+    • <b>Пользователь</b>: { $user_name } ({ $user_telegram_id ->
+        [0] <code>{ $user_email }</code>
+        *[HAS] <code>{ NUMBER($user_telegram_id, useGrouping: 0) }</code>
+    })
     • <b>Тип</b>: { purchase-type }
     • <b>Статус</b>: { transaction-status }
     • <b>Способ оплаты</b>: { gateway-type }
