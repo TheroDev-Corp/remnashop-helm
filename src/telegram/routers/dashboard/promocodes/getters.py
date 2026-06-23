@@ -97,7 +97,8 @@ async def getter_configurator(
 def _format_plan_snapshot(snapshot: dict[str, Any] | None, i18n: TranslatorRunner) -> str:
     if not snapshot:
         return "—"
-    name = snapshot.get("name", "?")
+    raw_name = snapshot.get("name", "?")
+    name = i18n.get(raw_name) if raw_name else "?"
     duration = snapshot.get("duration")
     return f"{name} ({i18n.get('unit-day', value=duration)})" if duration else str(name)
 
@@ -123,12 +124,13 @@ async def getter_type_select(**kwargs: Any) -> dict[str, Any]:
 async def getter_plan_select(
     dialog_manager: DialogManager,
     get_available_plans: FromDishka[GetAvailablePlans],
+    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     user = dialog_manager.middleware_data[USER_KEY]
     plans = await get_available_plans.system(user)
     return {
-        "plans": [{"id": p.id, "name": p.name} for p in plans],
+        "plans": [{"id": p.id, "name": i18n.get(p.name)} for p in plans],
     }
 
 

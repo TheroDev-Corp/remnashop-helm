@@ -8,7 +8,7 @@ from remnapy.models.hwid import HwidDeviceDto
 from src.application.common import Remnawave
 from src.application.common.dao import (
     PaymentGatewayDao,
-    PlanDao,
+    SettingsDao,
     SubscriptionDao,
 )
 from src.application.dto import PlanDto, PlanSnapshotDto, UserDto
@@ -34,7 +34,7 @@ from src.application.use_cases.subscription.commands.purchase import (
     ActivateTrialSubscription,
     ActivateTrialSubscriptionDto,
 )
-from src.application.use_cases.user.queries.plans import GetAvailablePlans
+from src.application.use_cases.user.queries.plans import GetAvailablePlans, GetAvailableTrial
 from src.core.enums import (
     PaymentGatewayType,
     PurchaseType,
@@ -66,6 +66,7 @@ from src.web.schemas import (
     SubscriptionInfoResponse,
     SubscriptionOffersResponse,
     TrialActivateResponse,
+    TrialPurchaseRequest,
 )
 
 from ._common import CurrentUser
@@ -108,11 +109,6 @@ async def _get_available_plan_by_code(
 ) -> Optional[PlanDto]:
     plans = await get_available_plans.system(user)
     return next((plan for plan in plans if plan.public_code == plan_code), None)
-
-
-async def _resolve_trial_plan(plan_dao: PlanDao) -> Optional[PlanDto]:
-    trial_plans = await plan_dao.get_active_trial_plans()
-    return trial_plans[0] if trial_plans else None
 
 
 async def _validate_gateway_for_web(
@@ -253,24 +249,140 @@ async def activate_promocode_web(
 @inject
 async def activate_trial_web(
     user: CurrentUser,
-    plan_dao: FromDishka[PlanDao],
+    settings_dao: FromDishka[SettingsDao],
+    payment_gateway_dao: FromDishka[PaymentGatewayDao],
+    pricing_service: FromDishka[PricingService],
+    get_available_trial: FromDishka[GetAvailableTrial],
     activate_trial: FromDishka[ActivateTrialSubscription],
 ) -> TrialActivateResponse:
     _assert_web_purchase_email_verified(user)
 
-    if not user.is_trial_available:
+    plan = await get_available_trial.system(user)
+    if not plan or not plan.durations:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Trial is not available")
 
-    plan = await _resolve_trial_plan(plan_dao)
-    if not plan or not plan.durations:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active trial plan")
+    duration = plan.durations[0]
+    settings = await settings_dao.get()
 
-    plan_snapshot = PlanSnapshotDto.from_plan(plan, plan.durations[0].days)
-    try:
-        await activate_trial.system(ActivateTrialSubscriptionDto(user=user, plan=plan_snapshot))
-    except TrialNotAvailableError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
-    return TrialActivateResponse(success=True)
+    # Free trial: activate immediately, no payment required.
+    if duration.get_price(settings.default_currency) == 0:
+        plan_snapshot = PlanSnapshotDto.from_plan(plan, duration.days)
+        try:
+            await activate_trial.system(ActivateTrialSubscriptionDto(user=user, plan=plan_snapshot))
+        except TrialNotAvailableError as e:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+        return TrialActivateResponse(
+            is_free=True,
+            activated=True,
+            duration_days=duration.days,
+        )
+
+    # Paid trial: report the available gateways and their prices. The actual
+    # payment is created via POST /trial/purchase once the user picks a gateway.
+    active_gateways = await payment_gateway_dao.get_active()
+    gateways: list[DurationGatewayPriceResponse] = []
+    for gateway in active_gateways:
+        if (
+            gateway.type == PaymentGatewayType.TELEGRAM_STARS
+            or not gateway.settings
+            or not gateway.settings.is_configured
+        ):
+            continue
+
+        pricing = pricing_service.calculate_for_duration(
+            user,
+            duration,
+            gateway.currency,
+            apply_discount=False,
+        )
+        gateways.append(
+            DurationGatewayPriceResponse(
+                gateway_type=gateway.type,
+                currency=gateway.currency.value,
+                currency_symbol=gateway.currency.symbol,
+                original_amount=str(pricing.original_amount),
+                discount_percent=pricing.discount_percent,
+                final_amount=str(pricing.final_amount),
+                is_free=pricing.is_free,
+            )
+        )
+
+    return TrialActivateResponse(
+        is_free=False,
+        activated=False,
+        duration_days=duration.days,
+        gateways=gateways,
+    )
+
+
+@router.post("/trial/purchase", response_model=PaymentInitResponse)
+@inject
+async def purchase_trial_web(
+    body: TrialPurchaseRequest,
+    user: CurrentUser,
+    settings_dao: FromDishka[SettingsDao],
+    payment_gateway_dao: FromDishka[PaymentGatewayDao],
+    pricing_service: FromDishka[PricingService],
+    get_available_trial: FromDishka[GetAvailableTrial],
+    create_payment: FromDishka[CreatePayment],
+    process_payment: FromDishka[ProcessPayment],
+) -> PaymentInitResponse:
+    _assert_web_purchase_email_verified(user)
+    await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao)
+
+    plan = await get_available_trial.system(user)
+    if not plan or not plan.durations:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Trial is not available")
+
+    duration = plan.durations[0]
+    settings = await settings_dao.get()
+    if duration.get_price(settings.default_currency) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Trial is free, use POST /subscription/trial to activate it",
+        )
+
+    gateway = await payment_gateway_dao.get_by_type(body.gateway_type)
+    if not gateway:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gateway not found")
+
+    pricing = pricing_service.calculate_for_duration(
+        user,
+        duration,
+        gateway.currency,
+        apply_discount=False,
+    )
+    plan_snapshot = PlanSnapshotDto.from_plan(plan, duration.days)
+    payment = await create_payment(
+        user,
+        CreatePaymentDto(
+            plan_snapshot=plan_snapshot,
+            pricing=pricing,
+            purchase_type=PurchaseType.NEW,
+            gateway_type=body.gateway_type,
+        ),
+    )
+
+    tx_status = TransactionStatus.PENDING
+    if pricing.is_free:
+        await process_payment.system(
+            ProcessPaymentDto(
+                payment_id=payment.id,
+                new_transaction_status=TransactionStatus.COMPLETED,
+                gateway_type=body.gateway_type,
+            ),
+        )
+        tx_status = TransactionStatus.COMPLETED
+
+    return PaymentInitResponse(
+        payment_id=str(payment.id),
+        payment_url=payment.url,
+        purchase_type=PurchaseType.NEW.value,
+        status=tx_status.value,
+        is_free=pricing.is_free,
+        final_amount=str(pricing.final_amount),
+        currency=gateway.currency.symbol,
+    )
 
 
 @router.post("/purchase", response_model=PaymentInitResponse)

@@ -73,6 +73,7 @@ from src.telegram.keyboards import (
     get_renew_keyboard,
     get_user_keyboard,
 )
+from src.telegram.widgets import extract_tg_emoji
 
 
 class NotificationService(Notifier):
@@ -243,7 +244,7 @@ class NotificationService(Notifier):
         route = None
         if notification_type:
             settings: SettingsDto = await self.settings_dao.get()
-            route = settings.notifications.get_route(notification_type)
+            route = settings.notifications.resolve_route(notification_type)
 
         if route and route.is_configured:
             await self._send_to_route(payload, route)
@@ -496,7 +497,11 @@ class NotificationService(Notifier):
                 i_buttons = []
                 for i_btn in i_row:
                     btn_dict = i_btn.model_dump()
-                    btn_dict["text"] = self._get_translated_text(locale, i_btn.text) or i_btn.text
+                    translated = self._get_translated_text(locale, i_btn.text) or i_btn.text
+                    clean_text, emoji_id = extract_tg_emoji(translated)
+                    btn_dict["text"] = clean_text
+                    if emoji_id and not btn_dict.get("icon_custom_emoji_id"):
+                        btn_dict["icon_custom_emoji_id"] = emoji_id
                     i_buttons.append(InlineKeyboardButton(**btn_dict))
                 i_rows.append(i_buttons)
             return InlineKeyboardMarkup(inline_keyboard=i_rows)

@@ -57,6 +57,7 @@ async def user_getter(
     dialog_manager: DialogManager,
     user: TelegramUserDto,
     get_user_profile: FromDishka[GetUserProfile],
+    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     dialog_manager.dialog_data.pop("payload", None)
@@ -96,7 +97,7 @@ async def user_getter(
             {
                 "status": profile.subscription.current_status,
                 "is_trial": profile.subscription.is_trial,
-                "plan_name": profile.subscription.plan_snapshot.name,
+                "plan_name": i18n.get(profile.subscription.plan_snapshot.name),
                 "traffic_limit": i18n_format_traffic_limit(profile.subscription.traffic_limit),
                 "device_limit": i18n_format_device_limit(profile.subscription.device_limit),
                 "expire_time": i18n_format_expire_time(profile.subscription.expire_at),
@@ -111,6 +112,7 @@ async def subscription_getter(
     dialog_manager: DialogManager,
     user: TelegramUserDto,
     get_user_profile_subscription: FromDishka[GetUserProfileSubscription],
+    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
@@ -152,7 +154,7 @@ async def subscription_getter(
         "node_name": user_profile_subscription.last_node_name,
         #
         "is_trial_plan": subscription.plan_snapshot.is_trial,
-        "plan_name": subscription.plan_snapshot.name,
+        "plan_name": i18n.get(subscription.plan_snapshot.name),
         "plan_type": subscription.plan_snapshot.type,
         "plan_traffic_limit": i18n_format_traffic_limit(subscription.plan_snapshot.traffic_limit),
         "plan_device_limit": i18n_format_device_limit(subscription.plan_snapshot.device_limit),
@@ -476,6 +478,7 @@ async def transaction_getter(
     dialog_manager: DialogManager,
     transaction_dao: FromDishka[TransactionDao],
     user_dao: FromDishka[UserDao],
+    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     if TARGET_USER_ID not in dialog_manager.dialog_data:
@@ -521,7 +524,7 @@ async def transaction_getter(
         "discount_percent": transaction.pricing.discount_percent,
         "original_amount": transaction.pricing.original_amount,
         "created_at": transaction.created_at.strftime(DATETIME_VIEW_FORMAT),  # type: ignore[union-attr]
-        "plan_name": transaction.plan_snapshot.name,
+        "plan_name": i18n.get(transaction.plan_snapshot.name),
         "plan_type": transaction.plan_snapshot.type,
         "plan_traffic_limit": i18n_format_traffic_limit(transaction.plan_snapshot.traffic_limit),
         "plan_device_limit": i18n_format_device_limit(transaction.plan_snapshot.device_limit),

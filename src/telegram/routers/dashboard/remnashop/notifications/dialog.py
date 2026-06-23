@@ -8,8 +8,17 @@ from src.telegram.states import DashboardRemnashop, RemnashopNotifications
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import Button, Column, Row, Select, Start, SwitchTo
 
-from .getters import system_route_getter, system_type_getter, system_types_getter, user_types_getter
+from .getters import (
+    system_default_route_getter,
+    system_route_getter,
+    system_type_getter,
+    system_types_getter,
+    user_types_getter,
+)
 from .handlers import (
+    on_default_route_chat_id_input,
+    on_default_route_clear,
+    on_default_route_thread_id_input,
     on_route_chat_id_input,
     on_route_clear,
     on_route_thread_id_input,
@@ -79,6 +88,13 @@ user = Window(
 system = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-notifications-system"),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-notifications.default-route"),
+            id="default_route",
+            state=RemnashopNotifications.SYSTEM_DEFAULT_ROUTE,
+        ),
+    ),
     Column(
         Select(
             text=I18nFormat(
@@ -201,6 +217,73 @@ system_route_thread_id = Window(
     getter=system_route_getter,
 )
 
+system_default_route = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-notifications-system-default-route"),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-notifications.chat-id"),
+            id="edit_chat",
+            state=RemnashopNotifications.SYSTEM_DEFAULT_ROUTE_CHAT_ID,
+        ),
+        SwitchTo(
+            text=I18nFormat("btn-notifications.thread-id"),
+            id="edit_thread",
+            state=RemnashopNotifications.SYSTEM_DEFAULT_ROUTE_THREAD_ID,
+        ),
+    ),
+    Row(
+        Button(
+            text=I18nFormat("btn-notifications.route-clear"),
+            id="clear_route",
+            on_click=on_default_route_clear,
+            when=F["has_route"],
+        ),
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=RemnashopNotifications.SYSTEM,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=RemnashopNotifications.SYSTEM_DEFAULT_ROUTE,
+    getter=system_default_route_getter,
+)
+
+system_default_route_chat_id = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-notifications-system-route-chat-id"),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=RemnashopNotifications.SYSTEM_DEFAULT_ROUTE,
+        ),
+    ),
+    MessageInput(func=on_default_route_chat_id_input),
+    IgnoreUpdate(),
+    state=RemnashopNotifications.SYSTEM_DEFAULT_ROUTE_CHAT_ID,
+    getter=system_default_route_getter,
+)
+
+system_default_route_thread_id = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-notifications-system-route-thread-id"),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=RemnashopNotifications.SYSTEM_DEFAULT_ROUTE,
+        ),
+    ),
+    MessageInput(func=on_default_route_thread_id_input),
+    IgnoreUpdate(),
+    state=RemnashopNotifications.SYSTEM_DEFAULT_ROUTE_THREAD_ID,
+    getter=system_default_route_getter,
+)
+
 router = Dialog(
     notifications,
     user,
@@ -209,4 +292,7 @@ router = Dialog(
     system_route,
     system_route_chat_id,
     system_route_thread_id,
+    system_default_route,
+    system_default_route_chat_id,
+    system_default_route_thread_id,
 )

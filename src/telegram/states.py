@@ -170,6 +170,9 @@ class RemnashopNotifications(StatesGroup):
     SYSTEM_ROUTE = State()
     SYSTEM_ROUTE_CHAT_ID = State()
     SYSTEM_ROUTE_THREAD_ID = State()
+    SYSTEM_DEFAULT_ROUTE = State()
+    SYSTEM_DEFAULT_ROUTE_CHAT_ID = State()
+    SYSTEM_DEFAULT_ROUTE_THREAD_ID = State()
 
 
 class RemnashopPlans(StatesGroup):

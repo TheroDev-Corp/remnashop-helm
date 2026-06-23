@@ -53,8 +53,8 @@ class PromocodeActivateResponse(BaseModel):
     reward_type: str
 
 
-class TrialActivateResponse(BaseModel):
-    success: bool
+class TrialPurchaseRequest(BaseModel):
+    gateway_type: PaymentGatewayType
 
 
 class ReissueResponse(BaseModel):
@@ -103,6 +103,13 @@ class DurationGatewayPriceResponse(BaseModel):
 class DurationOfferResponse(BaseModel):
     days: int
     prices: list[DurationGatewayPriceResponse]
+
+
+class TrialActivateResponse(BaseModel):
+    is_free: bool
+    activated: bool
+    duration_days: int
+    gateways: list[DurationGatewayPriceResponse] = []
 
 
 class PlanOfferResponse(BaseModel):

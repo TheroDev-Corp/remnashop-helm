@@ -12,7 +12,6 @@ from redis.asyncio import Redis
 
 from src.application.common import BotService, Remnawave
 from src.application.common.dao import SettingsDao
-from src.application.common.uow import UnitOfWork
 from src.application.events import (
     BotInlineModeDisabledEvent,
     BotShutdownEvent,
@@ -23,6 +22,7 @@ from src.application.events import (
 )
 from src.application.events.system import RemnashopWelcomeEvent
 from src.application.use_cases.gateways.commands.payment import CreateDefaultPaymentGateway
+from src.application.use_cases.settings.commands.defaults import CreateDefaultSettings
 from src.core.config import AppConfig
 from src.core.constants import REMNAWAVE_MAX_VERSION
 from src.core.utils.i18n_helpers import i18n_format_seconds
@@ -54,11 +54,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         config = await startup_container.get(AppConfig)
         bot_service = await startup_container.get(BotService)
         settings_dao = await startup_container.get(SettingsDao)
-        uow = await startup_container.get(UnitOfWork)
         webhook_service = await startup_container.get(WebhookService)
         command_service = await startup_container.get(CommandService)
         remnawave_service = await startup_container.get(Remnawave)
         create_default_payment_gateway = await startup_container.get(CreateDefaultPaymentGateway)
+        create_default_settings = await startup_container.get(CreateDefaultSettings)
         redis = await startup_container.get(Redis)
         retort = await startup_container.get(Retort)
 
@@ -71,11 +71,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         states = await bot_service.get_bot_states()
         await create_default_payment_gateway.system()
-        # `get()` lazily creates default settings via flush; commit here so the
-        # DAO stays free of commits (UoW owns the transaction boundary).
-        async with uow:
-            settings = await settings_dao.get()
-            await uow.commit()
+        # Seed the default settings row (committed, cache-invalidating) before any
+        # request can read it, so `get()` never has to lazily create — and cache —
+        # an uncommitted row whose id would later fail to match on update().
+        await create_default_settings.system()
+        settings = await settings_dao.get()
         allowed_updates = dispatcher.resolve_used_update_types()
         webhook_info: WebhookInfo = await webhook_service.setup_webhook(allowed_updates)
 
@@ -83,7 +83,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.critical(
                 f"Webhook has a last error message: '{webhook_info.last_error_message}'"
             )
-            webhook_error_event = WebhookErrorEvent()
+            webhook_error_event = WebhookErrorEvent(
+                error_message=webhook_info.last_error_message,
+            )
             await event_bus.publish(webhook_error_event)
 
         await command_service.setup_commands()

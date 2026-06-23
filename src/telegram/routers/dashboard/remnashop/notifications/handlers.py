@@ -10,6 +10,8 @@ from src.application.common.dao import SettingsDao
 from src.application.dto import TelegramUserDto
 from src.application.use_cases.settings.commands.notifications import (
     ToggleNotification,
+    UpdateDefaultNotificationRoute,
+    UpdateDefaultNotificationRouteDto,
     UpdateSystemNotificationRoute,
     UpdateSystemNotificationRouteDto,
 )
@@ -142,3 +144,72 @@ async def on_route_thread_id_input(
     )
 
     await dialog_manager.switch_to(RemnashopNotifications.SYSTEM_ROUTE)
+
+
+@inject
+async def on_default_route_clear(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    update_default_notification_route: FromDishka[UpdateDefaultNotificationRoute],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    await update_default_notification_route(
+        user,
+        UpdateDefaultNotificationRouteDto(chat_id=None, thread_id=None),
+    )
+    await dialog_manager.switch_to(RemnashopNotifications.SYSTEM_DEFAULT_ROUTE)
+
+
+@inject
+async def on_default_route_chat_id_input(
+    message: Message,
+    widget: MessageInput,
+    dialog_manager: DialogManager,
+    notifier: FromDishka[Notifier],
+    settings_dao: FromDishka[SettingsDao],
+    update_default_notification_route: FromDishka[UpdateDefaultNotificationRoute],
+) -> None:
+    dialog_manager.show_mode = ShowMode.EDIT
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+
+    chat_id = parse_int(message.text)
+    if chat_id is None:
+        await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
+        return
+
+    settings = await settings_dao.get()
+    thread_id = settings.notifications.default_route.thread_id
+
+    await update_default_notification_route(
+        user,
+        UpdateDefaultNotificationRouteDto(chat_id=chat_id, thread_id=thread_id),
+    )
+    await dialog_manager.switch_to(RemnashopNotifications.SYSTEM_DEFAULT_ROUTE)
+
+
+@inject
+async def on_default_route_thread_id_input(
+    message: Message,
+    widget: MessageInput,
+    dialog_manager: DialogManager,
+    notifier: FromDishka[Notifier],
+    settings_dao: FromDishka[SettingsDao],
+    update_default_notification_route: FromDishka[UpdateDefaultNotificationRoute],
+) -> None:
+    dialog_manager.show_mode = ShowMode.EDIT
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+
+    thread_id = parse_int(message.text)
+    if thread_id is None:
+        await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
+        return
+
+    settings = await settings_dao.get()
+    chat_id = settings.notifications.default_route.chat_id
+
+    await update_default_notification_route(
+        user,
+        UpdateDefaultNotificationRouteDto(chat_id=chat_id, thread_id=thread_id),
+    )
+    await dialog_manager.switch_to(RemnashopNotifications.SYSTEM_DEFAULT_ROUTE)

@@ -12,6 +12,14 @@ payment-invoice-description = { purchase-type } подписки { $name } на 
 ad-link-default-name = Новая ссылка
 plan-default-name = Новый план
 
+platform-icon =
+    .ios = 🍎
+    .android = 🤖
+    .windows = 🖥️
+    .macos = 💻
+    .linux = 🐧
+    .default = 📱
+
 inline-invite =
     .title = Пригласить друга
     .description = Нажмите, чтобы отправить пригласительную ссылку!

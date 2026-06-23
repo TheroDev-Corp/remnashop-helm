@@ -69,3 +69,38 @@ class UpdateSystemNotificationRoute(
             f"chat={chat_id}, thread={data.thread_id}"
         )
         return updated
+
+
+@dataclass
+class UpdateDefaultNotificationRouteDto:
+    chat_id: Optional[int]
+    thread_id: Optional[int]
+
+
+class UpdateDefaultNotificationRoute(
+    Interactor[UpdateDefaultNotificationRouteDto, Optional[SettingsDto]]
+):
+    required_permission = Permission.SETTINGS_NOTIFICATIONS
+
+    def __init__(self, uow: UnitOfWork, settings_dao: SettingsDao) -> None:
+        self.uow = uow
+        self.settings_dao = settings_dao
+
+    async def _execute(
+        self,
+        actor: UserDto,
+        data: UpdateDefaultNotificationRouteDto,
+    ) -> Optional[SettingsDto]:
+        chat_id = normalize_channel_id(data.chat_id) if data.chat_id is not None else None
+
+        async with self.uow:
+            settings = await self.settings_dao.get()
+            settings.notifications.set_default_route(chat_id, data.thread_id)
+            updated = await self.settings_dao.update(settings)
+            await self.uow.commit()
+
+        logger.info(
+            f"{actor.log} Updated default notification route: "
+            f"chat={chat_id}, thread={data.thread_id}"
+        )
+        return updated

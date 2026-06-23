@@ -1380,6 +1380,27 @@ msg-notifications-system-route =
     Если тред ID не задан — уведомление будет отправлено в чат.
 
 
+msg-notifications-system-default-route =
+    <b>📡 Общий маршрут</b>
+
+    <blockquote>
+    • <b>Чат ID</b>: { $chat_id ->
+        [0] { unknown }
+        *[HAS] <code>{ NUMBER($chat_id, useGrouping: 0) }</code>
+        }
+    • <b>Тред ID</b>: { $thread_id ->
+        [0] { unknown }
+        *[HAS] <code>{ NUMBER($thread_id, useGrouping: 0) }</code>
+        }
+    </blockquote>
+
+    Маршрут применяется ко всем системным уведомлениям, у которых не задан собственный маршрут.
+
+    Если чат ID не задан — уведомление будет отправлено в Личные сообщения.
+
+    Если тред ID не задан — уведомление будет отправлено в чат.
+
+
 msg-notifications-system-route-chat-id =
     <b>💬 Изменить Чат ID</b>
 

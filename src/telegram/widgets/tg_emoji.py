@@ -22,7 +22,7 @@ _TG_EMOJI_RE = re.compile(r'<tg-emoji emoji-id="(\d+)">([^<]*)</tg-emoji>')
 _TG_EMOJI_SHORT_RE = re.compile(r'<e id="(\d+)">([^<]*)</e>')
 
 
-def _extract_tg_emoji(text: str) -> tuple[str, str | None]:
+def extract_tg_emoji(text: str) -> tuple[str, str | None]:
     match = _TG_EMOJI_RE.search(text) or _TG_EMOJI_SHORT_RE.search(text)
     if not match:
         return text, None
@@ -44,7 +44,7 @@ class _EmojiRenderMixin:
             new_row: list[ButtonVariant] = []
             for btn in row:
                 if isinstance(btn, InlineKeyboardButton):
-                    clean_text, emoji_id = _extract_tg_emoji(btn.text)
+                    clean_text, emoji_id = extract_tg_emoji(btn.text)
                     if emoji_id:
                         btn = btn.model_copy(
                             update={

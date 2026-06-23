@@ -90,6 +90,7 @@ class NotificationsSettingsDto(TrackableMixin):
     routes: dict[str, SystemNotificationRouteDto] = field(
         default_factory=get_default_notifications_routes
     )
+    default_route: SystemNotificationRouteDto = field(default_factory=SystemNotificationRouteDto)
 
     def is_enabled(self, ntf_type: NotificationType) -> bool:
         return self.settings.get(ntf_type, True)
@@ -101,6 +102,17 @@ class NotificationsSettingsDto(TrackableMixin):
 
     def get_route(self, ntf_type: NotificationType) -> Optional[SystemNotificationRouteDto]:
         return self.routes.get(str(ntf_type))
+
+    def resolve_route(self, ntf_type: NotificationType) -> Optional[SystemNotificationRouteDto]:
+        route = self.routes.get(str(ntf_type))
+        if route and route.is_configured:
+            return route
+        if self.default_route.is_configured:
+            return self.default_route
+        return None
+
+    def set_default_route(self, chat_id: Optional[int], thread_id: Optional[int]) -> None:
+        self.default_route = SystemNotificationRouteDto(chat_id=chat_id, thread_id=thread_id)
 
     def set_route(
         self,

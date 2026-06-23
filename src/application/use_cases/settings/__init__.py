@@ -10,13 +10,18 @@ from .commands.backup import (
     UpdateBackupMaxFiles,
 )
 from .commands.currency import UpdateDefaultCurrency
+from .commands.defaults import CreateDefaultSettings
 from .commands.extra import (
     ToggleMiniAppReserve,
     ToggleResetFeature,
     ToggleTrialChannelGuard,
     UpdateResetCooldown,
 )
-from .commands.notifications import ToggleNotification, UpdateSystemNotificationRoute
+from .commands.notifications import (
+    ToggleNotification,
+    UpdateDefaultNotificationRoute,
+    UpdateSystemNotificationRoute,
+)
 from .commands.referral import (
     ToggleReferralSystem,
     UpdateReferralAccrualStrategy,
@@ -32,6 +37,7 @@ from .commands.requirements import (
 )
 
 SETTINGS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
+    CreateDefaultSettings,
     ChangeAccessMode,
     ToggleConditionRequirement,
     ToggleNotification,
@@ -47,6 +53,7 @@ SETTINGS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     UpdateRulesRequirement,
     UpdateDefaultCurrency,
     UpdateSystemNotificationRoute,
+    UpdateDefaultNotificationRoute,
     ToggleBackupEnabled,
     ToggleBackupSendToChat,
     UpdateBackupInterval,

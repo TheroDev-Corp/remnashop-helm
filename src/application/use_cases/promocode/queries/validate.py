@@ -74,7 +74,9 @@ class ValidatePromocode(Interactor[ValidatePromocodeDto, PromocodeDto]):
 
         if promo.reward_type in SUBSCRIPTION_REQUIRED_REWARDS:
             current = await self.subscription_dao.get_current(user.id)
-            if current is None:
+            if current is None or not current.is_active:
+                # An expired/disabled subscription has expire_at in the past; extending it
+                # would push a past date to the panel, which rejects it. Require an active sub.
                 logger.info(f"{actor.log} Promocode '{code}' requires an active subscription")
                 raise PromocodeNotAvailableError("Active subscription required for this promocode")
             if self._is_resource_unlimited(promo.reward_type, current):

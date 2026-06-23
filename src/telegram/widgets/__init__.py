@@ -16,6 +16,7 @@ from .tg_emoji import (
     EmojiSwitchTo,
     EmojiUrl,
     EmojiWebApp,
+    extract_tg_emoji,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "EmojiWebApp",
     "I18nFormat",
     "IgnoreUpdate",
+    "extract_tg_emoji",
 ]

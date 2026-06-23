@@ -111,8 +111,11 @@ async def on_promocode_confirm(
     except PromocodeExpiredError:
         await notifier.notify_user(user, i18n_key="ntf-promocode.expired")
         return
-    except (PromocodeNotFoundError, PromocodeNotAvailableError):
-        await notifier.notify_user(user, i18n_key="ntf-promocode.activation-failed")
+    except PromocodeNotFoundError:
+        await notifier.notify_user(user, i18n_key="ntf-promocode.not-found")
+        return
+    except PromocodeNotAvailableError:
+        await notifier.notify_user(user, i18n_key="ntf-promocode.not-available")
         return
     except Exception as exc:
         logger.exception(f"{user.log} Promocode '{code}' activation failed unexpectedly")
@@ -136,9 +139,13 @@ async def on_promocode_confirm(
 async def getter_promocode(dialog_manager: DialogManager, **kwargs: Any) -> dict[str, Any]:
     if dialog_manager.start_data and not dialog_manager.dialog_data.get(PENDING_PROMO_KEY):
         start_data = cast(dict[str, Any], dialog_manager.start_data)
-        prefill = start_data.get("prefill_code")
-        if prefill:
-            dialog_manager.dialog_data[PENDING_PROMO_KEY] = prefill
+        prefill_dto = start_data.get("prefill_dto")
+        if prefill_dto:
+            dialog_manager.dialog_data[PENDING_PROMO_KEY] = prefill_dto["code"]
+            dialog_manager.dialog_data[PENDING_PROMO_DTO_KEY] = prefill_dto
+            dialog_manager.dialog_data[PENDING_PROMO_REPLACE_KEY] = start_data.get(
+                "prefill_replace", False
+            )
 
     promo_data: dict[str, Any] = cast(
         dict[str, Any], dialog_manager.dialog_data.get(PENDING_PROMO_DTO_KEY, {})

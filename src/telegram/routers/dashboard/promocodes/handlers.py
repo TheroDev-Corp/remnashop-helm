@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -33,6 +34,16 @@ _DISCOUNT_TYPES = {
     PromocodeRewardType.PERSONAL_DISCOUNT,
     PromocodeRewardType.PURCHASE_DISCOUNT,
 }
+
+
+# Codes are rendered inside HTML messages and shared via `promo_<code>` deeplinks, whose
+# start parameter only allows A-Za-z0-9_- (Telegram Bot API). Restricting input to this set
+# prevents both HTML-parse crashes (e.g. "I<3VPN") and broken deeplinks.
+_SAFE_CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def is_safe_promo_code(code: str) -> bool:
+    return bool(_SAFE_CODE_RE.match(code))
 
 
 def is_promo_complete(promo: PromocodeDto) -> bool:
@@ -218,6 +229,9 @@ async def on_code_input(
     code = (message.text or "").strip()
     if not (3 <= len(code) <= 16):
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
+        return
+    if not is_safe_promo_code(code):
+        await notifier.notify_user(user, i18n_key="ntf-promocode.invalid-code")
         return
     promo = _load(dialog_manager, retort)
     promo.code = code

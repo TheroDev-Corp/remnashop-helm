@@ -446,6 +446,7 @@ btn-notifications =
     .user = 👥 Пользовательские
     .system = ⚙️ Системные
     .route = 📡 Маршрут
+    .default-route = 📡 Общий маршрут
     .chat-id = 💬 Изменить чат
     .thread-id = 📁 Изменить тред
     .route-clear = ❌ Удалить маршрут

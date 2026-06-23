@@ -145,24 +145,17 @@ class WebhookErrorEvent(SystemEvent):
         init=False,
     )
 
+    error_message: Optional[str] = None
+
     @property
     def event_key(self) -> str:
         return "event-error.webhook"
 
-    def as_payload(
-        self,
-        media: MediaDescriptorDto,
-        error_type: str,
-        error_message: Text,
-    ) -> "MessagePayloadDto":
+    def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={
-                **asdict(self),
-                "error": f"{error_type}: {error_message.as_html()}",
-            },
-            media=media,
-            media_type=MediaType.DOCUMENT,
+            i18n_kwargs={"error": self.error_message or "—"},
+            disable_default_markup=False,
             delete_after=None,
         )
 
@@ -459,7 +452,7 @@ class UserPurchaseEvent(UserEvent):
     original_amount: Decimal
     currency: str
 
-    plan_name: str
+    plan_name: Any
     plan_type: PlanType
     plan_traffic_limit: Any
     plan_device_limit: Any
@@ -498,7 +491,7 @@ class TrialActivatedEvent(UserEvent):
     )
 
     is_trial_plan: bool = True
-    plan_name: str
+    plan_name: Any
     plan_type: PlanType
     plan_traffic_limit: Any
     plan_device_limit: Any
@@ -559,7 +552,7 @@ class PromocodeActivatedEvent(SystemEvent):
     promocode_code: str
     reward_type: str
     reward: Optional[int]
-    plan_name: str
+    plan_name: Any
 
     @property
     def event_key(self) -> str:

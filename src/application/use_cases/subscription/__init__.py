@@ -4,7 +4,6 @@ from src.application.common import Interactor
 
 from .commands.management import (
     AddSubscriptionDuration,
-    ChannelMemberEventDto,
     DeleteSubscription,
     DisableTrialSubscription,
     EnableTrialSubscription,

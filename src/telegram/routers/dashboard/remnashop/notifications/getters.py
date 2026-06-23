@@ -92,3 +92,19 @@ async def system_route_getter(
         "chat_id": route.chat_id or False if route else False,
         "thread_id": route.thread_id or False if route else False,
     }
+
+
+@inject
+async def system_default_route_getter(
+    dialog_manager: DialogManager,
+    settings_dao: FromDishka[SettingsDao],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    settings = await settings_dao.get()
+    route = settings.notifications.default_route
+
+    return {
+        "has_route": route.chat_id or route.thread_id,
+        "chat_id": route.chat_id or False,
+        "thread_id": route.thread_id or False,
+    }

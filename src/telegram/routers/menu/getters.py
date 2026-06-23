@@ -133,20 +133,12 @@ async def menu_getter(
         raise MenuRenderError(str(e)) from e
 
 
-def get_platform_icon(platform: str | None) -> str:
-    platform_icons = {
-        "ios": "🍎",
-        "android": "🤖",
-        "windows": "🖥️",
-        "macos": "💻",
-        "linux": "🐧",
-    }
+def get_platform_icon(i18n: TranslatorRunner, platform: str | None) -> str:
+    known_platforms = {"ios", "android", "windows", "macos", "linux"}
 
-    default_icon = "📱"
-
-    if not platform:
-        return default_icon
-    return platform_icons.get(platform.lower(), default_icon)
+    if platform and platform.lower() in known_platforms:
+        return i18n.get(f"platform-icon.{platform.lower()}")
+    return i18n.get("platform-icon.default")
 
 
 @inject
@@ -173,11 +165,11 @@ async def devices_getter(
             "platform": device.platform or False,
             "device_model": device.device_model or False,
             "user_agent": device.user_agent,
-            "platform_icon": get_platform_icon(device.platform),
+            "platform_icon": get_platform_icon(i18n, device.platform),
             "created_at": device.created_at.strftime("%d.%m.%Y"),
             "label": i18n.get(
                 "btn-devices.item",
-                platform_icon=get_platform_icon(device.platform),
+                platform_icon=get_platform_icon(i18n, device.platform),
                 platform=device.platform or False,
                 device_model=device.device_model or False,
                 created_at=device.created_at.strftime("%d.%m.%Y"),
