@@ -23,7 +23,7 @@ secrets:
 # Основное приложение (FastAPI + Aiogram Webhook)
   image:
     repository: ghcr.io/therodev-corp/remnashop-helm
-    tag: v0.7.5 
+    tag: v0.8.2
     pullPolicy: IfNotPresent
   resources:
     limits:

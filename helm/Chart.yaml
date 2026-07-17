@@ -3,4 +3,4 @@ name: remnashop
 description: A Helm chart for Remnashop (Telegram VPN Bot)
 type: application
 version: "0.1.0"
-appVersion: "0.7.5"
+appVersion: "0.8.2"
