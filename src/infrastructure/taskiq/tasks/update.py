@@ -1,6 +1,5 @@
 from typing import Final
 
-import httpx
 import orjson
 from adaptix import Retort
 from dishka.integrations.taskiq import FromDishka, inject
@@ -17,7 +16,7 @@ from src.infrastructure.taskiq.broker import broker
 GITHUB_RELEASE_URL: Final[str] = "https://api.github.com/repos/snoups/remnashop/releases/latest"
 
 
-@broker.task(schedule=[{"cron": "*/60 * * * *"}], retry_on_error=False)
+@broker.task(schedule=[{"cron": "0 * * * *"}], retry_on_error=False)
 @inject(patch_module=True)
 async def check_bot_update(
     config: FromDishka[AppConfig],
@@ -35,8 +34,17 @@ async def check_bot_update(
         logger.warning("Local version tag is missing in config, skipping update check")
         return
 
+    import httpx  # noqa: PLC0415
+
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=30.0,
+                write=10.0,
+                pool=5.0,
+            )
+        ) as client:
             headers = {"Accept": "application/vnd.github.v3+json"}
             response = await client.get(GITHUB_RELEASE_URL, headers=headers)
             response.raise_for_status()

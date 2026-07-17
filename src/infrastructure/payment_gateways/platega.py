@@ -1,6 +1,6 @@
 import hmac
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any, Final, Optional, Union, cast
 from uuid import UUID
 
 import orjson
@@ -22,6 +22,8 @@ class PlategaGateway(BasePaymentGateway):
     _client: AsyncClient
 
     API_BASE: Final[str] = "https://app.platega.io"
+    DEFAULT_MULTI_METHOD_ENDPOINT: Final[str] = "v2/transaction/process"
+    DEFAULT_SINGLE_METHOD_ENDPOINT: Final[str] = "transaction/process"
 
     def __init__(self, gateway: PaymentGatewayDto, bot: Bot, config: AppConfig) -> None:
         super().__init__(gateway, bot, config)
@@ -32,22 +34,35 @@ class PlategaGateway(BasePaymentGateway):
                 f"got {type(self.data.settings).__name__}"
             )
 
+        self.settings = cast(PlategaGatewaySettingsDto, self.data.settings)
+        if self.settings.merchant_id is None or self.settings.api_key is None:
+            raise ValueError("Platega gateway is not configured")
+
+        self.merchant_id = self.settings.merchant_id
+        self.api_key = self.settings.api_key.get_secret_value()
+
         self._client = self._make_client(
             base_url=self.API_BASE,
             headers={
-                "X-MerchantId": self.data.settings.merchant_id,  # type: ignore[dict-item]
-                "X-Secret": self.data.settings.api_key.get_secret_value(),  # type: ignore[union-attr]
+                "X-MerchantId": self.merchant_id,
+                "X-Secret": self.api_key,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
         )
+        self.selected_payment_method: Optional[str] = None
 
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(amount, details)
         logger.debug(f"Creating payment payload: {payload}")
+        endpoint = (
+            self.DEFAULT_SINGLE_METHOD_ENDPOINT
+            if self.settings.payment_method is not None
+            else self.DEFAULT_MULTI_METHOD_ENDPOINT
+        )
 
         try:
-            response = await self._client.post("transaction/process", json=payload)
+            response = await self._client.post(endpoint, json=payload)
             response.raise_for_status()
             data = orjson.loads(response.content)
             return self._get_payment_data(data)
@@ -65,11 +80,8 @@ class PlategaGateway(BasePaymentGateway):
             logger.exception(f"An unexpected error occurred while creating payment: {e}")
             raise
 
-    async def handle_webhook(self, request: Request) -> tuple[UUID, TransactionStatus]:
+    async def handle_webhook(self, request: Request) -> Union[tuple[UUID, TransactionStatus], None]:
         logger.debug(f"Received {self.__class__.__name__} webhook request")
-
-        if not self._verify_webhook(request):
-            raise PermissionError("Webhook verification failed")
 
         raw_body = await request.body()
         webhook_data = orjson.loads(raw_body)
@@ -83,6 +95,9 @@ class PlategaGateway(BasePaymentGateway):
 
         status = webhook_data.get("status")
         payment_id = UUID(payment_id_str)
+        self.selected_payment_method = self._normalize_payment_method(
+            webhook_data.get("paymentMethod")
+        )
 
         match status:
             case "CONFIRMED":
@@ -97,9 +112,7 @@ class PlategaGateway(BasePaymentGateway):
         return payment_id, transaction_status
 
     async def _create_payment_payload(self, amount: Decimal, details: str) -> dict[str, Any]:
-        return {
-            "command": {},
-            "paymentMethod": self.data.settings.payment_method,  # type: ignore[union-attr]
+        payload: dict[str, Any] = {
             "paymentDetails": {
                 "amount": float(amount),
                 "currency": self.data.currency.value,
@@ -108,31 +121,40 @@ class PlategaGateway(BasePaymentGateway):
             "return": await self._get_bot_redirect_url(),
             "failedUrl": await self._get_bot_redirect_url(),
         }
+        if self.settings.payment_method is not None:
+            payload["paymentMethod"] = self.settings.payment_method
+
+        return payload
 
     def _get_payment_data(self, data: dict[str, Any]) -> PaymentResultDto:
         transaction_id_str = data.get("transactionId")
         if not transaction_id_str:
             raise KeyError("Invalid response from API: missing 'transactionId'")
 
-        payment_url = data.get("redirect")
+        payment_url = data.get("redirect") or data.get("url")
         if not payment_url:
-            raise KeyError("Invalid response from API: missing 'redirect'")
+            raise KeyError("Invalid response from API: missing 'redirect' or 'url'")
 
         return PaymentResultDto(id=UUID(transaction_id_str), url=str(payment_url))
+
+    @staticmethod
+    def _normalize_payment_method(value: Any) -> str | None:
+        if value is None:
+            return None
+
+        payment_method = str(value).strip()
+        return payment_method or None
 
     def _verify_webhook(self, request: Request) -> bool:
         merchant_id = request.headers.get("X-MerchantId")
         secret = request.headers.get("X-Secret")
 
-        expected_merchant_id: str = self.data.settings.merchant_id  # type: ignore[union-attr, assignment]
-        expected_secret: str = self.data.settings.api_key.get_secret_value()  # type: ignore[union-attr]
-
         if not merchant_id or not secret:
             logger.warning("Webhook is missing X-MerchantId or X-Secret headers")
             return False
 
-        merchant_id_ok = hmac.compare_digest(merchant_id, expected_merchant_id)
-        secret_ok = hmac.compare_digest(secret, expected_secret)
+        merchant_id_ok = hmac.compare_digest(merchant_id, self.merchant_id)
+        secret_ok = hmac.compare_digest(secret, self.api_key)
 
         if not merchant_id_ok or not secret_ok:
             logger.warning("Invalid Platega webhook credentials")

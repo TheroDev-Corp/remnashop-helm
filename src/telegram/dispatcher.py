@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from aiogram import Dispatcher
 from aiogram.fsm.storage.base import DefaultKeyBuilder
 from aiogram.fsm.storage.redis import RedisStorage
@@ -9,6 +11,7 @@ from src.infrastructure.common import json
 from src.telegram.filters import setup_global_filters
 from src.telegram.message_manager import MessageManager
 from src.telegram.middlewares import setup_middlewares
+from src.telegram.middlewares.user import UserMiddleware
 from src.telegram.routers import setup_routers
 
 
@@ -21,6 +24,8 @@ def get_dispatcher(config: AppConfig) -> Dispatcher:
         ),
         json_loads=json.decode,
         json_dumps=json.encode,
+        state_ttl=timedelta(days=7),
+        data_ttl=timedelta(days=7),
     )
 
     dispatcher = Dispatcher(storage=storage, config=config)
@@ -43,3 +48,11 @@ def setup_dispatcher(dispatcher: Dispatcher) -> None:
     setup_global_filters(dispatcher)
     setup_routers(dispatcher)
     logger.info("Dispatcher layers have been configured")
+
+
+def setup_worker_dispatcher(dispatcher: Dispatcher) -> None:
+    # Background redirects (e.g. Subscription:SUCCESS) start dialogs via bg_manager, which
+    # emit AIOGD_UPDATE. Dialog getters rely on USER_KEY, so UserMiddleware must populate it.
+    UserMiddleware().setup_outer(dispatcher)
+    setup_routers(dispatcher)
+    logger.info("Worker dispatcher routers have been configured")

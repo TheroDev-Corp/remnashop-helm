@@ -63,7 +63,7 @@ async def channel_getter(
 
     return {
         "channel_url": settings.requirements.channel_url,
-        "channel_id": settings.requirements.channel_id or False
+        "channel_id": (settings.requirements.channel_id or False)
         if not settings.requirements.channel_has_username
         else False,
     }

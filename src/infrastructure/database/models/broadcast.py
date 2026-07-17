@@ -1,7 +1,7 @@
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import BigInteger, ForeignKey
+from sqlalchemy import BigInteger, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.enums import BroadcastAudience, BroadcastMessageStatus, BroadcastStatus
@@ -41,7 +41,13 @@ class BroadcastMessage(BaseSql):
         index=True,
     )
 
-    user_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    # Telegram chat ID used for message delivery; nullable for web-only users
+    user_telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
 
     status: Mapped[BroadcastMessageStatus] = mapped_column(index=True)

@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
-from src.core.enums import PaymentGatewayType
+from src.core.enums import PaymentGatewayType, PromocodeRewardType
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,7 @@ class UserStatisticsDto:
     payment_amounts: list[UserPaymentStatsDto]
     registered_at: datetime
     referrer_telegram_id: Optional[int]
+    referrer_email: Optional[str]
     referrer_username: Optional[str]
     referrals_level_1: int
     referrals_level_2: int
@@ -25,7 +26,7 @@ class UserStatisticsDto:
     reward_days: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReferralStatisticsDto:
     total_referrals: int
     level_1_count: int
@@ -35,8 +36,10 @@ class ReferralStatisticsDto:
     total_points_issued: int
     total_days_issued: int
     top_referrer_referrals_count: int
-    top_referrer_username: Optional[str] = None
+    top_referrer_id: Optional[int] = None
     top_referrer_telegram_id: Optional[int] = None
+    top_referrer_username: Optional[str] = None
+    top_referrer_email: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -77,12 +80,46 @@ class PlanIncomeDto:
 
 
 @dataclass(frozen=True)
+class PromocodeStatisticsDto:
+    total_promocodes: int
+    active_promocodes: int
+    total_activations: int
+    activations_today: int
+    activations_week: int
+    activations_month: int
+    issued_days: int
+    issued_traffic: int
+    issued_devices: int
+    issued_subscriptions: int
+    issued_personal_discounts: int
+    issued_purchase_discounts: int
+
+
+@dataclass(frozen=True)
+class PromocodeDetailStatisticsDto:
+    code: str
+    reward_type: PromocodeRewardType
+    reward: Optional[int]
+    plan_snapshot: Optional[dict[str, Any]]
+    is_active: bool
+    is_reusable: bool
+    created_at: datetime
+    expires_at: Optional[datetime]
+    max_activations: Optional[int]
+    total_activations: int
+    activations_today: int
+    activations_week: int
+    activations_month: int
+
+
+@dataclass(frozen=True)
 class GatewayStatsDto:
     gateway_type: PaymentGatewayType
     total_income: Decimal
     daily_income: Decimal
     weekly_income: Decimal
     monthly_income: Decimal
+    last_month_income: Decimal
     paid_count: int
     total_discounts: Decimal
     total_transactions: int

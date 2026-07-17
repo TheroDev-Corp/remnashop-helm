@@ -32,16 +32,21 @@ class SettingsDaoImpl(SettingsDao, BaseDaoImpl):
 
         self._convert_to_dto = self.conversion_retort.get_converter(Settings, SettingsDto)
 
+    @invalidate_cache(key_builder=SETTINGS_PREFIX)
     async def create_default(self) -> SettingsDto:
         settings_data = self.retort.dump(SettingsDto())
+        settings_data.pop("id", None)
         db_settings = Settings(**settings_data)
         self.session.add(db_settings)
 
         await self.session.flush()
-        await self.session.commit()
 
         logger.debug("Created default settings")
         return self._convert_to_dto(db_settings)
+
+    async def exists(self) -> bool:
+        stmt = select(Settings.id).limit(1)
+        return await self.session.scalar(stmt) is not None
 
     @provide_cache(prefix=SETTINGS_PREFIX, ttl=TTL_6H)
     async def get(self) -> SettingsDto:
@@ -49,8 +54,11 @@ class SettingsDaoImpl(SettingsDao, BaseDaoImpl):
         db_settings = await self.session.scalar(stmt)
 
         if not db_settings:
-            logger.debug("Settings not found, creating default")
-            return await self.create_default()
+            # Invariant: CreateDefaultSettings seeds the row at startup before any
+            # request reaches this DAO. A missing row here means the bootstrap did
+            # not run — fail loudly instead of caching an uncommitted phantom whose
+            # id would never match on a later update().
+            raise RuntimeError("Settings row is missing; default settings were not initialized")
 
         logger.debug("Global settings retrieved")
         return self._convert_to_dto(db_settings)

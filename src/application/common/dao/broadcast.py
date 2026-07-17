@@ -2,7 +2,7 @@ from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
 from src.application.dto import BroadcastDto, BroadcastMessageDto
-from src.core.enums import BroadcastMessageStatus, BroadcastStatus
+from src.core.enums import BroadcastStatus
 
 
 @runtime_checkable
@@ -21,17 +21,9 @@ class BroadcastDao(Protocol):
         messages: list[BroadcastMessageDto],
     ) -> list[BroadcastMessageDto]: ...
 
-    async def update_message_status(
-        self,
-        task_id: UUID,
-        telegram_id: int,
-        status: BroadcastMessageStatus,
-        message_id: Optional[int] = None,
-    ) -> None: ...
-
     async def update_stats(self, task_id: UUID, success_count: int, failed_count: int) -> None: ...
 
-    async def get_active(self) -> list[BroadcastDto]: ...
+    async def update_total_count(self, task_id: UUID, total: int) -> None: ...
 
     async def delete_old(self, days: int = 7) -> int: ...
 

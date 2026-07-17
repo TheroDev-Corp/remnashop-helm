@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from src.application.common import Interactor
 from src.application.common.dao import ReferralDao, SubscriptionDao, TransactionDao, UserDao
+from src.application.common.policy import Permission
 from src.application.dto import UserDto, UserStatisticsDto
 from src.core.utils.converters import percent
 
@@ -22,7 +23,7 @@ class UsersStatisticsDto:
 
 
 class GetUsersStatistics(Interactor[None, UsersStatisticsDto]):
-    required_permission = None
+    required_permission = Permission.VIEW_STATISTICS
 
     def __init__(
         self,
@@ -64,7 +65,7 @@ class GetUsersStatistics(Interactor[None, UsersStatisticsDto]):
 
 
 class GetUserStatistics(Interactor[int, UserStatisticsDto]):
-    required_permission = None
+    required_permission = Permission.USER_EDITOR
 
     def __init__(
         self,
@@ -76,21 +77,26 @@ class GetUserStatistics(Interactor[int, UserStatisticsDto]):
         self.transaction_dao = transaction_dao
         self.referral_dao = referral_dao
 
-    async def _execute(self, actor: UserDto, telegram_id: int) -> UserStatisticsDto:
+    async def _execute(self, actor: UserDto, user_id: int) -> UserStatisticsDto:
+        user = await self.user_dao.get_by_id(user_id)
+        if not user:
+            raise ValueError(f"User '{user_id}' not found")
+
+        assert user.created_at is not None
         last_payment_at, payment_amounts = await self.transaction_dao.get_user_payment_stats(
-            telegram_id
+            user.id
         )
-        user = await self.user_dao.get_by_telegram_id(telegram_id)
-        referral_stats = await self.referral_dao.get_user_referral_stats(telegram_id)
+        referral_stats = await self.referral_dao.get_user_referral_stats(user.id)
 
         return UserStatisticsDto(
             last_payment_at=last_payment_at,
             payment_amounts=payment_amounts,
-            registered_at=user.created_at,  # type: ignore[arg-type, union-attr]
-            referrer_telegram_id=referral_stats["referrer_telegram_id"],
-            referrer_username=referral_stats["referrer_username"],
-            referrals_level_1=referral_stats["referrals_level_1"],
-            referrals_level_2=referral_stats["referrals_level_2"],
-            reward_points=referral_stats["reward_points"],
-            reward_days=referral_stats["reward_days"],
+            registered_at=user.created_at,
+            referrer_telegram_id=referral_stats.referrer_telegram_id,
+            referrer_email=referral_stats.referrer_email,
+            referrer_username=referral_stats.referrer_username,
+            referrals_level_1=referral_stats.referrals_level_1,
+            referrals_level_2=referral_stats.referrals_level_2,
+            reward_points=referral_stats.reward_points,
+            reward_days=referral_stats.reward_days,
         )

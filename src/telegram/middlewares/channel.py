@@ -6,7 +6,7 @@ from dishka import AsyncContainer
 from loguru import logger
 
 from src.application.common import Notifier
-from src.application.dto import MessagePayloadDto, UserDto
+from src.application.dto import MessagePayloadDto, TelegramUserDto
 from src.application.use_cases.access.queries.requirements import CheckChannelSubscription
 from src.core.constants import CONTAINER_KEY, USER_KEY
 from src.core.enums import MiddlewareEventType
@@ -25,7 +25,7 @@ class ChannelMiddleware(EventTypedMiddleware):
         data: dict[str, Any],
     ) -> Any:
         container: AsyncContainer = data[CONTAINER_KEY]
-        user: UserDto = data[USER_KEY]
+        user: TelegramUserDto = data[USER_KEY]
 
         check_channel_subscription = await container.get(CheckChannelSubscription)
         notifier = await container.get(Notifier)
@@ -34,11 +34,11 @@ class ChannelMiddleware(EventTypedMiddleware):
 
         if result.is_subscribed:
             if self._is_click_confirm(event):
-                logger.info(f"{user.log} Cofirmed join channel")
+                logger.info(f"{user.log} Confirmed join channel")
                 await self._delete_previous_message(event)
 
             if not result.error_occurred:
-                logger.debug(f"User '{user.telegram_id}' passed channel check")
+                logger.debug(f"{user.log} passed channel check")
 
             return await handler(event, data)
 
@@ -52,9 +52,7 @@ class ChannelMiddleware(EventTypedMiddleware):
                 else "ntf-requirement.channel-join-required"
             )
 
-        logger.debug(
-            f"User '{user.telegram_id}' failed channel check with status '{result.status}'"
-        )
+        logger.debug(f"{user.log} failed channel check with status '{result.status}'")
 
         await notifier.notify_user(
             user=user,

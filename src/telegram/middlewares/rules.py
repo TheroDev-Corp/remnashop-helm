@@ -4,7 +4,7 @@ from aiogram.types import CallbackQuery, TelegramObject
 from dishka import AsyncContainer
 
 from src.application.common import Notifier
-from src.application.dto import MessagePayloadDto, UserDto
+from src.application.dto import MessagePayloadDto, TelegramUserDto
 from src.application.use_cases.access.commands.validation import AcceptRules
 from src.application.use_cases.access.queries.requirements import CheckRules
 from src.core.constants import CONTAINER_KEY, USER_KEY
@@ -24,7 +24,7 @@ class RulesMiddleware(EventTypedMiddleware):
         data: dict[str, Any],
     ) -> Any:
         container: AsyncContainer = data[CONTAINER_KEY]
-        user: UserDto = data[USER_KEY]
+        user: TelegramUserDto = data[USER_KEY]
 
         check_rules = await container.get(CheckRules)
         accept_rules = await container.get(AcceptRules)

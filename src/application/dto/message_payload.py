@@ -42,3 +42,7 @@ class MessagePayloadDto:
     @property
     def is_document(self) -> bool:
         return self.media_type is MediaType.DOCUMENT
+
+    @property
+    def is_animation(self) -> bool:
+        return self.media_type is MediaType.GIF

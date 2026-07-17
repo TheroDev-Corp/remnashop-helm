@@ -8,11 +8,16 @@ from .commands.messages import (
     InitializeBroadcastMessages,
     UpdateBroadcastMessageStatus,
 )
-from .queries.audience import GetBroadcastAudienceCount, GetBroadcastAudienceUsers
+from .queries.audience import (
+    GetBroadcastAudienceCount,
+    GetBroadcastAudienceUsers,
+    HasAvailableBroadcastPlans,
+)
 
 BROADCAST_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     GetBroadcastAudienceCount,
     GetBroadcastAudienceUsers,
+    HasAvailableBroadcastPlans,
     StartBroadcast,
     DeleteBroadcast,
     CancelBroadcast,

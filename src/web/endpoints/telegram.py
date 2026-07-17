@@ -9,6 +9,8 @@ from dishka.integrations.fastapi import FromDishka, inject
 from fastapi import Body, FastAPI, Header, HTTPException, Response, status
 from loguru import logger
 
+_MAX_CONCURRENT_UPDATES = 100
+
 
 class TelegramWebhookEndpoint:
     dispatcher: Dispatcher
@@ -19,6 +21,7 @@ class TelegramWebhookEndpoint:
         self.dispatcher = dispatcher
         self.secret_token = secret_token
         self._feed_update_tasks = set()
+        self._semaphore = asyncio.Semaphore(_MAX_CONCURRENT_UPDATES)
 
     async def startup(self) -> None:
         await self.dispatcher.emit_startup(**self.dispatcher.workflow_data)
@@ -37,18 +40,25 @@ class TelegramWebhookEndpoint:
         )
 
     def register(self, app: FastAPI, path: str) -> None:
-        app.add_api_route(path, endpoint=self._handle_request, methods=["POST"])
+        app.add_api_route(
+            path, endpoint=self._handle_request, methods=["POST"], include_in_schema=False
+        )
 
     def _verify_secret(self, telegram_secret_token: str) -> bool:
         return secrets.compare_digest(telegram_secret_token, self.secret_token)
 
     async def _feed_update(self, bot: Bot, update: Update) -> None:
-        try:
-            result = await self.dispatcher.feed_update(bot, update)
-            if isinstance(result, TelegramMethod):
-                await result.as_(bot)
-        except Exception as e:
-            logger.exception(f"Failed to process update '{update.update_id}' due to error '{e}'")
+        # Bound concurrent update processing so a flood cannot exhaust resources
+        # (DB connections, etc.); excess updates queue on the semaphore.
+        async with self._semaphore:
+            try:
+                result = await self.dispatcher.feed_update(bot, update)
+                if isinstance(result, TelegramMethod):
+                    await result.as_(bot)
+            except Exception as e:
+                logger.exception(
+                    f"Failed to process update '{update.update_id}' due to error '{e}'"
+                )
 
     @inject
     async def _handle_request(

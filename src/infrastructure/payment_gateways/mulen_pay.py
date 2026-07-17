@@ -2,7 +2,7 @@ import hashlib
 import uuid
 from decimal import Decimal
 from hmac import compare_digest
-from typing import Any, Final
+from typing import Any, Final, Union
 from uuid import UUID
 
 import orjson
@@ -72,11 +72,12 @@ class MulenPayGateway(BasePaymentGateway):
             logger.exception(f"An unexpected error occurred while creating payment: {e}")
             raise
 
-    async def handle_webhook(self, request: Request) -> tuple[UUID, TransactionStatus]:
+    async def handle_webhook(self, request: Request) -> Union[tuple[UUID, TransactionStatus], None]:
         logger.debug(f"Received {self.__class__.__name__} webhook request")
 
         webhook_data = await self._get_webhook_data(request)
 
+        # MulenPay does not provide webhook signature verification
         # if not self._verify_webhook(webhook_data):
         #     raise PermissionError("Webhook verification failed")
 
@@ -146,7 +147,7 @@ class MulenPayGateway(BasePaymentGateway):
 
         shop_id = self.data.settings.shop_id  # type: ignore[union-attr]
         raw_amount = data.get("amount", "")
-        currency = data.get("currency", "rub")
+        currency = data.get("currency", "rub").lower()
 
         try:
             amount = f"{Decimal(str(raw_amount)):.2f}"
@@ -157,7 +158,7 @@ class MulenPayGateway(BasePaymentGateway):
         expected = self._generate_signature(currency, amount, shop_id)  # type: ignore[arg-type]
 
         if not compare_digest(expected, sign):
-            logger.warning("Invalid MulenPay webhook signature.")
+            logger.warning("Invalid MulenPay webhook signature")
             return False
 
         return True

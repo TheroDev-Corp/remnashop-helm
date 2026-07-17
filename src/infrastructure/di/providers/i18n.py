@@ -3,7 +3,6 @@ from typing import Optional
 from adaptix import Retort
 from dishka import AnyOf, Provider, Scope, provide
 from dishka.integrations.aiogram import AiogramMiddlewareData
-from fluentogram.storage import FileStorage
 from loguru import logger
 
 from src.application.common import TranslatorHub as TranslatorHubProtocol
@@ -12,6 +11,7 @@ from src.application.dto import UserDto
 from src.core.config import AppConfig
 from src.core.constants import USER_KEY
 from src.infrastructure.services import TranslatorHubImpl
+from src.infrastructure.services.i18n import LayeredFileStorage
 
 
 class I18nProvider(Provider):
@@ -23,7 +23,10 @@ class I18nProvider(Provider):
         config: AppConfig,
         retort: Retort,
     ) -> AnyOf[TranslatorHubProtocol, TranslatorHubImpl]:
-        storage = FileStorage(path=config.translations_dir / "{locale}")
+        storage = LayeredFileStorage(
+            user_translations_dir=config.translations_dir,
+            default_translations_dir=config.default_translations_dir,
+        )
         locales_map: dict[str, tuple[str, ...]] = {}
 
         for locale_code in config.locales:

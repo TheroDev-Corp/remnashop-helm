@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, ROUND_UP, Decimal
 from typing import Final, Optional, Union
 
+from src.core.constants import UNLIMITED_EXPIRE_YEAR
 from src.core.utils.time import datetime_now
 
 from .i18n_keys import ByteUnitKey, TimeUnitKey, UtilKey
@@ -94,7 +95,7 @@ def i18n_format_device_limit(value: Optional[int]) -> tuple[str, dict[str, int]]
 
 def i18n_format_expire_time(expiry: Union[timedelta, datetime]) -> list[tuple[str, dict[str, int]]]:
     # Special case: unlimited remnawave ;D
-    if isinstance(expiry, datetime) and expiry.year == 2099:
+    if isinstance(expiry, datetime) and expiry.year == UNLIMITED_EXPIRE_YEAR:
         return [(UtilKey.UNLIMITED, {"value": 0})]
 
     # Convert datetime to timedelta
@@ -106,7 +107,7 @@ def i18n_format_expire_time(expiry: Union[timedelta, datetime]) -> list[tuple[st
 
     if delta.total_seconds() <= 0:
         # Already expired or zero, default to 1 minute
-        return [("unknown", {"value": 0})]
+        return [(UtilKey.UNKNOWN, {"value": 0})]
 
     days = delta.days
     seconds = delta.seconds
@@ -131,4 +132,4 @@ def i18n_format_expire_time(expiry: Union[timedelta, datetime]) -> list[tuple[st
     if minutes:
         parts.append((TimeUnitKey.MINUTE, {"value": minutes}))
 
-    return parts or [("unknown", {"value": 0})]
+    return parts or [(UtilKey.UNKNOWN, {"value": 0})]

@@ -1,51 +1,33 @@
-#TODO: add custom
-
 # `Banners`
 
-The `banners` folder contains all banner images.
+The `banners/` folder in your **user volume** contains your custom banner images. The bot ships default banners baked into the Docker image at `assets.default/banners/`.
 
 ## Banner configuration
 
-You can configure how banners are displayed in the bot using an environment variable:
+* **`BOT_USE_BANNERS`**: Set to `true` to enable banners, or `false` to disable them.
 
-* **`BOT_USE_BANNERS`**: Set to true to enable banners, or false to disable them.
-
-## Locale support
-
-The banner system supports **localized versions**. A banner corresponding to the user's **locale** will be loaded for each user. Available locales are defined by the `APP_LOCALES` environment variable.
-
-### How it works:
+## How it works
 
 When loading a banner, the system searches in the following order:
 
+**User volume (`assets/banners/`):**
 1. `banners/{user_locale}/{page}` — page-specific banner for the user’s locale
 2. `banners/{user_locale}/default` — default banner for the user’s locale
-3. `banners/{default_locale}/{page}` — page-specific banner for the default locale (`APP_DEFAULT_LOCALE`)
+3. `banners/{default_locale}/{page}` — page-specific banner for the default locale
 4. `banners/{default_locale}/default` — default banner for the default locale
-5. `banners/default` — global fallback
+5. `banners/default` — global user fallback
 
-Steps 3–4 handle the case where a user’s locale is not supported — the system falls back to the default locale’s banners before using the global default.
+**Bot defaults (`assets.default/banners/`, inside image):**
+6. `banners/{user_locale}/{page}` — bot default page banner
+7. `banners/default` — bot global default (last resort)
 
-This means:
-- To use **one image everywhere** — place a single `banners/default.jpg`.
-- To use **one image per locale** — place `banners/{locale}/default.jpg` for each locale.
-- To use **per-page images** — place `banners/{locale}/{page}.jpg` for each page and locale.
+To **use your own banner** — place the file in `assets/banners/`. It automatically takes priority over the bot’s built-in defaults.
 
-This ensures that even if a specific banner or locale is not found, some banner will always be displayed, preventing empty or missing images.
+To **use the bot’s shipped defaults** — simply don’t place a file; the image provides it.
 
-## Supported formats
+## Locale support
 
-The following file formats are supported, as defined in `/remnashop/src/core/enums.py` as `BannerFormat`:
-
-* **JPG**
-* **JPEG**
-* **PNG**
-* **GIF**
-* **WEBP**
-
-## Banner names
-
-Banner filenames must correspond to the following predefined names, specified in `/remnashop/src/core/enums.py` as `BannerName`:
+Banner filenames must correspond to the predefined names in `/remnashop/src/core/enums.py` as `BannerName`:
 
 * **`DEFAULT`**: The default banner, used when a specific banner is not found.
 * **`MENU`**: The main menu banner.
@@ -53,31 +35,33 @@ Banner filenames must correspond to the following predefined names, specified in
 * **`SUBSCRIPTION`**: The subscription banner.
 * **`REFERRAL`**: The referral banner.
 
-## Example file structure
+## Supported formats
 
-```
-banners/
-├── default.jpg       ← global default (used for all pages and locales as last fallback)
-├── ru/
-│   ├── default.jpg   ← default for all pages in ru locale
-│   ├── menu.jpg      ← page-specific banner for ru locale
-│   └── subscription.jpg
-└── en/
-    ├── default.jpg   ← default for all pages in en locale
-    └── menu.jpg
-```
+The following file formats are supported (`BannerFormat` in `/remnashop/src/core/enums.py`):
+
+* **JPG**, **JPEG**, **PNG**, **GIF**, **WEBP**
 
 
 # `Translations`
 
-The `translations` folder contains all localization text files.
+The `translations/` folder in your **user volume** contains only `custom.ftl` files — one per locale. Bot built-in translations live inside the Docker image at `assets.default/translations/` and are always up to date with the bot version.
+
+## How it works
+
+For each locale, the bot loads two sources in priority order:
+
+1. `assets/translations/{locale}/custom.ftl` — **your overrides** (highest priority)
+2. `assets.default/translations/{locale}/*.ftl` — **bot built-ins** (fallback for all other keys)
+
+This means:
+- New keys added in a bot update are available automatically — no action needed.
+- Your overrides in `custom.ftl` are never touched by updates.
+- To override any built-in key, add it to `custom.ftl` with your translation.
 
 ## Translation configuration
 
-Supported locales are defined in environment variables:
-
-* **`APP_LOCALES`**: A list of supported locales. A full list of available locales can be found in `remnashop/src/core/enums.py` as `Locale`.
-* **`APP_DEFAULT_LOCALE`**: The default locale to be used if a user's language preference is not specified or not supported.
+* **`APP_LOCALES`**: Supported locales (e.g. `ru,en`).
+* **`APP_DEFAULT_LOCALE`**: Default locale.
 
 
 ## Key naming convention
@@ -112,7 +96,8 @@ All translation keys must follow a unified structure:
     - ❌ msg-plan-success-deleted
 3. Actions — past tense verbs (created, updated, deleted, canceled, failed).
 4. States — adjectives (empty, invalid, not-found, expired, not-available).
-5. Limit to 5 segments maximum.
+5. Limit to 5 segments maximum (recommended).
+6. Keep the total key length under 32 characters (recommended).
 
 ## Examples keys
 
@@ -124,6 +109,103 @@ All translation keys must follow a unified structure:
 | Message: plan created successfully    | `msg-plan-created-success`        |
 | Notification: gateway test failed     | `ntf-gateway-test-payment-failed` |
 
+
+## `custom.ftl`
+
+Each locale folder may contain a `custom.ftl` file (e.g. `translations/ru/custom.ftl`). This file is intended for user-defined translations that are not part of the standard set — such as custom menu buttons, plan names, and similar entries.
+
+### Usage
+
+Add key-value pairs to the file using the standard Fluent syntax:
+
+```
+key-name = Translation text
+```
+
+Then use the key wherever text is expected (e.g. in a plan name or menu link). The system will resolve it to the translated string at runtime.
+
+### Constraints
+
+| Context      | Max length      |
+| ------------ | --------------- |
+| Buttons      | 32 characters   |
+| Messages     | 1024 characters |
+
+### Key naming
+
+Keys must be **unique** and should follow the general naming convention described above. To avoid collisions with built-in keys, prefix custom keys with `custom-`:
+
+```
+custom-menu-link1 = 1️⃣ First button
+custom-plan-name1 = Basic plan
+```
+
+### Example file
+
+```ftl
+# Custom menu buttons
+custom-menu-link1 = 1️⃣ First button
+custom-menu-link2 = 2️⃣ Second button
+
+# Custom plan names
+custom-plan-name1 = 1️⃣ Basic plan
+custom-plan-name2 = 2️⃣ Premium plan
+```
+
+
+# `Custom Emoji`
+
+Telegram supports custom emoji in buttons. To use them, the bot must have a paid username (Fragment) or the bot owner must have an active Telegram Premium subscription.
+
+## How to get an emoji ID
+
+1. Send the desired custom emoji to [@getidsbot](https://t.me/getidsbot) or `@RawDataBot`.
+2. The bot will return message details including the `custom_emoji_id`.
+
+## Syntax
+
+Two formats are supported directly in `.ftl` key values.
+
+### Full format
+
+```ftl
+btn-example = <tg-emoji emoji-id="5406756500108501710">🎁</tg-emoji> Button text
+```
+
+### Short format
+
+```ftl
+btn-example = <e id="5406756500108501710">🎁</e> Button text
+```
+
+The fallback text inside the tag (a plain emoji) is shown on clients that don't support custom emoji. It is recommended to always provide it.
+
+## Usage in buttons
+
+Both formats are automatically recognized by the `Emoji*` widgets (`EmojiButton`, `EmojiSwitchTo`, `EmojiBack`, etc.) when rendering keyboards. The custom emoji is extracted from the key text and passed as `icon_custom_emoji_id` on the Telegram button — it is a separate field, not part of the label.
+
+Example in `buttons.ftl`:
+
+```ftl
+btn-menu =
+    .connect = <tg-emoji emoji-id="5447410659077661506">🚀</tg-emoji> Connect
+    .devices = <e id="5271604874419647061">📱</e> Devices
+```
+
+## Usage in messages
+
+Custom emoji can be used in message text via the `I18nFormat` widget. The short format `<e id="...">` is automatically expanded to the full `<tg-emoji>` tag before the text is sent.
+
+```ftl
+msg-broadcast-main = <tg-emoji emoji-id="5424818078833715060">📢</tg-emoji> <b>Broadcast</b>
+msg-statistics-main = <e id="5231200819986047254">📊</e> <b>Statistics</b>
+```
+
+## Emoji priority
+
+If a button already has `icon_custom_emoji_id` set via the widget's `Style` (aiogram-dialog `Style(icon_custom_emoji_id="...")`), it takes priority over the emoji from the key text.
+
+---
 
 # `QR Code Logo`
 

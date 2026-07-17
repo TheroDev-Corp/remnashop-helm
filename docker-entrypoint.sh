@@ -3,52 +3,62 @@ set -e
 
 ASSETS_CONTAINER_PATH="/opt/remnashop/assets"
 ASSETS_DEFAULT_PATH="/opt/remnashop/assets.default"
-ASSETS_BACKUP_PATH="${ASSETS_CONTAINER_PATH}/.bak"
-
-RESET_FLAG="${RESET_ASSETS:-false}"
-IS_VOLUME_EMPTY=$(ls -A $ASSETS_CONTAINER_PATH 2>/dev/null)
 
 UVICORN_RELOAD_ARGS=""
 
+echo "Starting asset initialization"
 
-echo "Starting asset initialization, reset flag is '${RESET_FLAG}'"
-
-if [ "$RESET_FLAG" = 'true' ]; then
-    echo "Reset assets flag is set to true, archiving existing data and setting default"
-
-    if [ -n "$IS_VOLUME_EMPTY" ]; then
-        echo "Found existing assets, creating backup"
-
-        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-        BACKUP_FILENAME="assets_backup_${TIMESTAMP}.tar.gz"
-
-        mkdir -p $ASSETS_BACKUP_PATH
-        tar --exclude='.bak' -czf "$ASSETS_BACKUP_PATH/$BACKUP_FILENAME" -C "$ASSETS_CONTAINER_PATH" .
-        
-        if [ $? -eq 0 ]; then
-            echo "Successfully created archive at '${ASSETS_BACKUP_PATH}/${BACKUP_FILENAME}'"
-        else
-            echo "Error creating backup archive, continuing with caution"
-        fi
-
-        echo "Removing existing assets from '${ASSETS_CONTAINER_PATH}'"
-        find $ASSETS_CONTAINER_PATH -mindepth 1 -maxdepth 1 ! -name ".bak" -exec rm -rf {} +
-    else
-        echo "Assets volume is empty, no need to archive"
-    fi
-
-    echo "Copying all default assets for full reset"
-    cp -a "$ASSETS_DEFAULT_PATH/." "$ASSETS_CONTAINER_PATH"
-    echo "Assets reset complete"
-
-elif [ -z "$IS_VOLUME_EMPTY" ]; then
-    echo "Volume mounted to '${ASSETS_CONTAINER_PATH}' is empty, copying default assets for initial setup"
-    cp -a "$ASSETS_DEFAULT_PATH/." "$ASSETS_CONTAINER_PATH"
-    echo "Default assets successfully copied"
-
-else
-    echo "Volume mounted to '${ASSETS_CONTAINER_PATH}' is not empty, skipping asset initialization to preserve user data"
+# --- First run: copy default banners if user banners dir is empty ---
+USER_BANNERS="${ASSETS_CONTAINER_PATH}/banners"
+if [ ! -d "$USER_BANNERS" ] || [ -z "$(ls -A "$USER_BANNERS" 2>/dev/null)" ]; then
+    echo "No user banners found — copying defaults"
+    cp -a "${ASSETS_DEFAULT_PATH}/banners/." "$USER_BANNERS/"
 fi
+
+# --- Migrate legacy layout: move pre-0.8 *.ftl (except custom.ftl) into .legacy/ ---
+# Built-in translations now ship in assets.default; the user volume keeps only custom.ftl.
+# Skipped when assets.default is absent (local dev bind-mounts src into assets directly).
+USER_TRANSLATIONS="${ASSETS_CONTAINER_PATH}/translations"
+if [ -d "$ASSETS_DEFAULT_PATH" ] && [ -d "$USER_TRANSLATIONS" ]; then
+    for locale_dir in "$USER_TRANSLATIONS"/*/; do
+        [ -d "$locale_dir" ] || continue
+        for ftl in "$locale_dir"*.ftl; do
+            [ -f "$ftl" ] || continue
+            case "$(basename "$ftl")" in
+                custom.ftl) continue ;;
+            esac
+            mkdir -p "${locale_dir}.legacy"
+            mv "$ftl" "${locale_dir}.legacy/"
+            echo "Moved legacy translation $(basename "$ftl") -> ${locale_dir}.legacy/"
+        done
+    done
+fi
+
+# --- Bootstrap custom.ftl for each locale in assets.default ---
+if [ -d "${ASSETS_DEFAULT_PATH}/translations" ]; then
+    for locale_dir in "${ASSETS_DEFAULT_PATH}/translations"/*/; do
+        locale=$(basename "$locale_dir")
+        USER_LOCALE_DIR="${ASSETS_CONTAINER_PATH}/translations/${locale}"
+        CUSTOM_FTL="${USER_LOCALE_DIR}/custom.ftl"
+        TEMPLATE_FTL="${ASSETS_DEFAULT_PATH}/translations/${locale}/custom.ftl"
+        mkdir -p "$USER_LOCALE_DIR"
+        if [ ! -f "$CUSTOM_FTL" ]; then
+            # Copy the template custom.ftl from defaults (contains usage comments, no overrides)
+            if [ -f "$TEMPLATE_FTL" ]; then
+                cp "$TEMPLATE_FTL" "$CUSTOM_FTL"
+                echo "Created custom.ftl for locale: ${locale}"
+            else
+                touch "$CUSTOM_FTL"
+                echo "Created empty custom.ftl for locale: ${locale}"
+            fi
+        elif [ -f "$TEMPLATE_FTL" ]; then
+            # User's custom.ftl is left untouched; refresh the reference template for diffing
+            cp "$TEMPLATE_FTL" "${CUSTOM_FTL}.example"
+        fi
+    done
+fi
+
+echo "Asset initialization complete"
 
 
 echo "Migrating database"

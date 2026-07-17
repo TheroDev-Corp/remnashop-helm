@@ -946,6 +946,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyjwt"
+version = "2.13.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/81/58d0ac84e1ef3a3843791d6954d94c0b33d526c75eeb1efbce9d0a4c4077/pyjwt-2.13.0.tar.gz", hash = "sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423", size = 107515, upload-time = "2026-05-21T19:54:36.618Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl", hash = "sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728", size = 31274, upload-time = "2026-05-21T19:54:35.362Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1069,8 +1078,8 @@ wheels = [
 
 [[package]]
 name = "remnapy"
-version = "2.7.1.dev1+gb712d1d02"
-source = { git = "https://github.com/snoups/remnapy?rev=b712d1d#b712d1d02c9b75ffdfda3229e80114d71c18b1c3" }
+version = "2.7.1.dev4+g95e15ed2e"
+source = { git = "https://github.com/snoups/remnapy?rev=95e15ed#95e15ed2ea29aa62f112a8af790d6151f5db5fb1" }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
@@ -1099,11 +1108,12 @@ dependencies = [
     { name = "loguru" },
     { name = "msgspec" },
     { name = "pydantic-settings" },
+    { name = "pyjwt" },
     { name = "python-multipart" },
     { name = "qrcode", extra = ["pil"] },
     { name = "redis" },
     { name = "remnapy" },
-    { name = "sqlalchemy", extra = ["mypy"] },
+    { name = "sqlalchemy" },
     { name = "taskiq", extra = ["orjson"] },
     { name = "taskiq-redis" },
     { name = "uvicorn" },
@@ -1117,6 +1127,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "sqlalchemy", extra = ["mypy"] },
     { name = "types-cachetools" },
     { name = "watchfiles" },
 ]
@@ -1133,15 +1144,16 @@ requires-dist = [
     { name = "dishka", specifier = "~=1.7.2" },
     { name = "fastapi", specifier = ">=0.120.2" },
     { name = "fluentogram", specifier = "~=1.2.1" },
-    { name = "greenlet", specifier = ">=3.2.4" },
+    { name = "greenlet", specifier = ">=3.3.0" },
     { name = "loguru", specifier = "~=0.7.3" },
     { name = "msgspec", specifier = "~=0.19.0" },
     { name = "pydantic-settings", specifier = "~=2.11.0" },
+    { name = "pyjwt", specifier = ">=2.13.0" },
     { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "qrcode", extras = ["pil"], specifier = ">=8.2" },
     { name = "redis", specifier = "~=7.0.0" },
-    { name = "remnapy", git = "https://github.com/snoups/remnapy?rev=b712d1d" },
-    { name = "sqlalchemy", extras = ["mypy"], specifier = ">=2.0.0" },
+    { name = "remnapy", git = "https://github.com/snoups/remnapy?rev=95e15ed" },
+    { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "taskiq", extras = ["orjson"], specifier = "~=0.12.1" },
     { name = "taskiq-redis", specifier = "~=1.2.1" },
     { name = "uvicorn", specifier = ">=0.38.0" },
@@ -1155,6 +1167,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-asyncio" },
     { name = "ruff", specifier = ">=0.14.2" },
+    { name = "sqlalchemy", extras = ["mypy"], specifier = ">=2.0.0" },
     { name = "types-cachetools" },
     { name = "watchfiles", specifier = ">=1.1.1" },
 ]

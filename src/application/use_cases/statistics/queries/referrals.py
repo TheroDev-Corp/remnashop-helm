@@ -1,10 +1,13 @@
+from dataclasses import replace
+
 from src.application.common import Interactor
 from src.application.common.dao import ReferralDao, UserDao
+from src.application.common.policy import Permission
 from src.application.dto import ReferralStatisticsDto, UserDto
 
 
 class GetReferralStatistics(Interactor[None, ReferralStatisticsDto]):
-    required_permission = None
+    required_permission = Permission.VIEW_STATISTICS
 
     def __init__(self, referral_dao: ReferralDao, user_dao: UserDao) -> None:
         self.referral_dao = referral_dao
@@ -13,10 +16,15 @@ class GetReferralStatistics(Interactor[None, ReferralStatisticsDto]):
     async def _execute(self, actor: UserDto, data: None) -> ReferralStatisticsDto:
         stats = await self.referral_dao.get_stats()
 
-        if stats.top_referrer_telegram_id:
-            referrer = await self.user_dao.get_by_telegram_id(stats.top_referrer_telegram_id)
+        if stats.top_referrer_id:
+            referrer = await self.user_dao.get_by_id(stats.top_referrer_id)
 
             if referrer:
-                stats.top_referrer_username = referrer.username
+                stats = replace(
+                    stats,
+                    top_referrer_telegram_id=referrer.telegram_id,
+                    top_referrer_email=referrer.email,
+                    top_referrer_username=referrer.username,
+                )
 
         return stats

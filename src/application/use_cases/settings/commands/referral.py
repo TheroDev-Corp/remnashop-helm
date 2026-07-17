@@ -12,6 +12,9 @@ from src.core.enums import (
     ReferralRewardType,
 )
 
+PERCENT_MAX_REWARD = 100
+AMOUNT_MAX_REWARD = 100_000
+
 
 class ToggleReferralSystem(Interactor[None, bool]):
     required_permission = Permission.SETTINGS_REFERRAL
@@ -53,7 +56,12 @@ class UpdateReferralLevel(Interactor[int, None]):
 
             for level_enum in ReferralLevel:
                 if level_enum.value <= new_level and level_enum not in new_config:
-                    prev_val = new_config.get(ReferralLevel(level_enum.value - 1), 0)
+                    prev_level_value = level_enum.value - 1
+                    prev_val = (
+                        new_config.get(ReferralLevel(prev_level_value), 0)
+                        if prev_level_value >= ReferralLevel.FIRST
+                        else 0
+                    )
                     new_config[level_enum] = prev_val
 
             settings.referral.reward.config = new_config
@@ -136,14 +144,19 @@ class UpdateReferralRewardConfig(Interactor[str, None]):
         async with self.uow:
             settings = await self.settings_dao.get()
             max_allowed_level = settings.referral.level
+            max_reward = (
+                PERCENT_MAX_REWARD
+                if settings.referral.reward.strategy == ReferralRewardStrategy.PERCENT
+                else AMOUNT_MAX_REWARD
+            )
             new_config = settings.referral.reward.config.copy()
             old_config_str = str(new_config)
 
             if input_text.isdigit():
                 value = int(input_text)
 
-                if value < 1:
-                    raise ValueError(f"Reward value '{value}' cannot be negative")
+                if not 1 <= value <= max_reward:
+                    raise ValueError(f"Reward value '{value}' must be between 1 and {max_reward}")
 
                 new_config[ReferralLevel.FIRST] = value
             else:
@@ -156,9 +169,10 @@ class UpdateReferralRewardConfig(Interactor[str, None]):
 
                     value = int(value_str.strip())
 
-                    if value < 1:
+                    if not 1 <= value <= max_reward:
                         raise ValueError(
-                            f"Reward value '{value}' for level '{level}' cannot be negative"
+                            f"Reward value '{value}' for level '{level}' "
+                            f"must be between 1 and {max_reward}"
                         )
 
                     new_config[level] = value

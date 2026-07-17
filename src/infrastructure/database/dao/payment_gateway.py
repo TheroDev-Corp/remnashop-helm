@@ -46,6 +46,7 @@ class PaymentGatewayDaoImpl(PaymentGatewayDao, BaseDaoImpl):
 
         gateway_data = self.retort.dump(gateway)
         gateway_data["order_index"] = max_index + 1
+        gateway_data.pop("id", None)
 
         db_gateway = PaymentGateway(**gateway_data)
         self.session.add(db_gateway)

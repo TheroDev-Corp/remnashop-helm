@@ -1,7 +1,11 @@
 from typing import Optional, Protocol, runtime_checkable
 
-from src.application.dto import ReferralDto, ReferralRewardDto, ReferralStatisticsDto
-from src.core.enums import ReferralRewardType
+from src.application.dto import (
+    ReferralDto,
+    ReferralRewardDto,
+    ReferralStatisticsDto,
+    UserReferralStatsDto,
+)
 
 
 @runtime_checkable
@@ -25,15 +29,7 @@ class ReferralDao(Protocol):
         referral_id: int,
     ) -> ReferralRewardDto: ...
 
-    async def get_pending_rewards(self) -> list[ReferralRewardDto]: ...
-
     async def mark_reward_as_issued(self, reward_id: int) -> None: ...
-
-    async def get_total_rewards_amount(
-        self,
-        telegram_id: int,
-        reward_type: ReferralRewardType,
-    ) -> int: ...
 
     async def get_referral_chain(
         self,
@@ -42,6 +38,6 @@ class ReferralDao(Protocol):
 
     async def get_stats(self) -> ReferralStatisticsDto: ...
 
-    async def get_user_referral_stats(self, telegram_id: int) -> dict: ...
+    async def get_user_referral_stats(self, user_id: int) -> UserReferralStatsDto: ...
 
-    async def get_referrals_with_payment_count(self, referrer_id: int) -> int: ...
+    async def get_referrals_with_payment_count(self, user_id: int) -> int: ...

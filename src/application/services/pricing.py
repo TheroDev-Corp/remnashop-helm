@@ -2,7 +2,7 @@ from decimal import ROUND_DOWN, Decimal, InvalidOperation
 
 from loguru import logger
 
-from src.application.dto import PriceDetailsDto, UserDto
+from src.application.dto import PlanDurationDto, PriceDetailsDto, UserDto
 from src.core.enums import Currency
 
 
@@ -16,15 +16,21 @@ class PricingService:
         discount_percent = min(max(user.purchase_discount or 0, user.personal_discount or 0), 100)
         logger.debug(
             f"Calculated effective discount percent '{discount_percent}' for user "
-            f"'{user.telegram_id}' (purchase_discount='{user.purchase_discount}', "
+            f"'{user.remna_name}' (purchase_discount='{user.purchase_discount}', "
             f"personal_discount='{user.personal_discount}')"
         )
         return discount_percent
 
-    def calculate(self, user: UserDto, price: Decimal, currency: Currency) -> PriceDetailsDto:
+    def calculate(
+        self,
+        user: UserDto,
+        price: Decimal,
+        currency: Currency,
+        apply_discount: bool = True,
+    ) -> PriceDetailsDto:
         logger.debug(
             f"Calculating price for amount '{price}' and currency "
-            f"'{currency}' for user '{user.telegram_id}'"
+            f"'{currency}' for user '{user.remna_name}'"
         )
 
         if price <= 0:
@@ -35,10 +41,10 @@ class PricingService:
                 final_amount=Decimal(0),
             )
 
-        discount_percent = self.get_effective_discount(user)
+        discount_percent = self.get_effective_discount(user) if apply_discount else 0
 
         if discount_percent >= 100:
-            logger.info(f"100% discount applied, price is free for user '{user.telegram_id}'")
+            logger.info(f"100% discount applied, price is free for user {user.log}")
             return PriceDetailsDto(
                 original_amount=price,
                 discount_percent=100,
@@ -60,6 +66,27 @@ class PricingService:
             original_amount=price,
             discount_percent=discount_percent,
             final_amount=final_amount,
+        )
+
+    def calculate_for_duration(
+        self,
+        user: UserDto,
+        duration: PlanDurationDto,
+        currency: Currency,
+        apply_discount: bool = True,
+    ) -> PriceDetailsDto:
+        discount = self.get_effective_discount(user) if apply_discount else 0
+
+        if discount >= 100 and not any(p.currency == currency for p in duration.prices):
+            fallback = next((p.price for p in duration.prices), Decimal(0))
+            logger.info(
+                f"{user.log} 100% discount: currency '{currency}' has no price, "
+                f"using fallback original amount '{fallback}'"
+            )
+            return self.calculate(user, fallback, currency, apply_discount=apply_discount)
+
+        return self.calculate(
+            user, duration.get_price(currency), currency, apply_discount=apply_discount
         )
 
     def parse_price(self, input_price: str, currency: Currency) -> Decimal:

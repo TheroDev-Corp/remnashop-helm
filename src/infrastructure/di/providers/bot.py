@@ -11,6 +11,16 @@ from loguru import logger
 from src.core.config import AppConfig
 
 
+def _normalize_proxy_url(url: str) -> str:
+    # aiohttp_socks doesn't recognize the socks5h/socks4a schemes; aiogram always
+    # resolves DNS remotely (rdns=True), so they're equivalent to socks5/socks4.
+    if url.startswith("socks5h://"):
+        return url.replace("socks5h://", "socks5://", 1)
+    if url.startswith("socks4a://"):
+        return url.replace("socks4a://", "socks4://", 1)
+    return url
+
+
 class BotProvider(Provider):
     scope = Scope.APP
 
@@ -23,7 +33,8 @@ class BotProvider(Provider):
         session = None
         if config.bot.proxy_url:
             logger.info("Using SOCKS5 proxy for Telegram")
-            session = AiohttpSession(proxy=config.bot.proxy_url.get_secret_value())
+            proxy = _normalize_proxy_url(config.bot.proxy_url.get_secret_value())
+            session = AiohttpSession(proxy=proxy)
 
         async with Bot(
             token=config.bot.token.get_secret_value(),
@@ -31,6 +42,3 @@ class BotProvider(Provider):
             session=session,
         ) as bot:
             yield bot
-
-        logger.debug("Closing Bot session")
-        await bot.session.close()

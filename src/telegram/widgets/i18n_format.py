@@ -1,3 +1,4 @@
+import re
 from typing import Any, Optional, Union
 
 from aiogram_dialog.api.internal import TextWidget
@@ -9,6 +10,8 @@ from magic_filter import MagicFilter
 
 from src.application.common import TranslatorRunner
 from src.core.constants import CONTAINER_KEY
+
+_TG_EMOJI_SHORT_RE = re.compile(r'<e id="(\d+)">([^<]*)</e>')
 
 
 class I18nFormat(Text):
@@ -47,4 +50,6 @@ class I18nFormat(Text):
         if self.mapping:
             data = await self._transform(data, dialog_manager)
 
-        return i18n.get(self.key.format_map(data), **data)
+        result = i18n.get(self.key.format_map(data), **data)
+        result = _TG_EMOJI_SHORT_RE.sub(r'<tg-emoji emoji-id="\1">\2</tg-emoji>', result)
+        return result

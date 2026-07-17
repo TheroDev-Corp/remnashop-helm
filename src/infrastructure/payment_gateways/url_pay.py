@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import uuid
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any, Final, Union
 from uuid import UUID
 
 import orjson
@@ -46,7 +46,7 @@ class UrlPayGateway(BasePaymentGateway):
 
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         order_uuid = str(uuid.uuid4())
-        payload = self._create_payment_payload(str(amount), details, order_uuid)
+        payload = self._create_payment_payload(f"{amount:.2f}", details, order_uuid)
         logger.debug(f"Creating payment payload: {payload}")
 
         try:
@@ -72,7 +72,7 @@ class UrlPayGateway(BasePaymentGateway):
             logger.exception(f"An unexpected error occurred while creating payment: {e}")
             raise
 
-    async def handle_webhook(self, request: Request) -> tuple[UUID, TransactionStatus]:
+    async def handle_webhook(self, request: Request) -> Union[tuple[UUID, TransactionStatus], None]:
         logger.debug(f"Received {self.__class__.__name__} webhook request")
 
         webhook_data = await self._get_webhook_data(request)

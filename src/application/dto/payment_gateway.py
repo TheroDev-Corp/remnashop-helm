@@ -27,6 +27,7 @@ class PaymentGatewayDto(BaseDto, TrackableMixin):
     @property
     def requires_webhook(self) -> bool:
         return self.type not in {
+            PaymentGatewayType.TELEGRAM_STARS,
             PaymentGatewayType.CRYPTOMUS,
             PaymentGatewayType.HELEKET,
             PaymentGatewayType.FREEKASSA,
@@ -36,10 +37,12 @@ class PaymentGatewayDto(BaseDto, TrackableMixin):
 
 @dataclass(kw_only=True)
 class GatewaySettingsDto(TrackableMixin):
+    display_name: Optional[str] = None
+
     @property
     def is_configured(self) -> bool:
         for f in fields(self):
-            if f.name in {"created_at", "updated_at", "type"}:
+            if f.name in {"created_at", "updated_at", "type", "display_name"}:
                 continue
             if getattr(self, f.name) is None:
                 return False
@@ -52,6 +55,11 @@ class GatewaySettingsDto(TrackableMixin):
             for f in fields(self)
             if f.name not in {"type", "created_at", "updated_at"} and not f.name.startswith("_")
         ]
+
+
+@dataclass(kw_only=True)
+class TelegramStarsGatewaySettingsDto(GatewaySettingsDto):
+    type: Literal[PaymentGatewayType.TELEGRAM_STARS] = PaymentGatewayType.TELEGRAM_STARS
 
 
 @dataclass(kw_only=True)
@@ -87,7 +95,6 @@ class HeleketGatewaySettingsDto(GatewaySettingsDto):
 @dataclass(kw_only=True)
 class CryptoPayGatewaySettingsDto(GatewaySettingsDto):
     type: Literal[PaymentGatewayType.CRYPTOPAY] = PaymentGatewayType.CRYPTOPAY
-    shop_id: Optional[str] = None
     api_key: Optional[SecretStr] = None
 
 
@@ -125,6 +132,10 @@ class PlategaGatewaySettingsDto(GatewaySettingsDto):
     api_key: Optional[SecretStr] = None
     payment_method: Optional[int] = None
 
+    @property
+    def is_configured(self) -> bool:
+        return self.merchant_id is not None and self.api_key is not None
+
 
 @dataclass(kw_only=True)
 class RoboKassaGatewaySettingsDto(GatewaySettingsDto):
@@ -149,7 +160,14 @@ class WataGatewaySettingsDto(GatewaySettingsDto):
     api_key: Optional[SecretStr] = None
 
 
+@dataclass(kw_only=True)
+class ValutixGatewaySettingsDto(GatewaySettingsDto):
+    type: Literal[PaymentGatewayType.VALUTIX] = PaymentGatewayType.VALUTIX
+    api_key: Optional[SecretStr] = None
+
+
 AnyGatewaySettingsDto = Union[
+    TelegramStarsGatewaySettingsDto,
     YooKassaGatewaySettingsDto,
     YooMoneyGatewaySettingsDto,
     CryptomusGatewaySettingsDto,
@@ -162,4 +180,5 @@ AnyGatewaySettingsDto = Union[
     RoboKassaGatewaySettingsDto,
     UrlPayGatewaySettingsDto,
     WataGatewaySettingsDto,
+    ValutixGatewaySettingsDto,
 ]

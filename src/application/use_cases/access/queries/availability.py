@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from loguru import logger
 
@@ -13,6 +14,7 @@ class CheckAccessDto:
     temp_user: TempUserDto
     is_payment_event: bool
     is_referral_event: bool
+    is_ad_link_event: bool = False
 
     @property
     def telegram_id(self) -> int:
@@ -35,7 +37,7 @@ class CheckAccess(Interactor[CheckAccessDto, bool]):
         self.notifier = notifier
 
     async def _execute(self, actor: UserDto, data: CheckAccessDto) -> bool:
-        user = await self.user_dao.get_by_telegram_id(data.telegram_id)
+        user: Optional[UserDto] = await self.user_dao.get_by_telegram_id(data.telegram_id)
         settings = await self.settings_dao.get()
 
         if user:
@@ -52,16 +54,19 @@ class CheckAccess(Interactor[CheckAccessDto, bool]):
             logger.info(f"Access denied for user '{data.telegram_id}' due to restricted mode")
             return False
 
-        if user:
-            if data.is_payment_event and not settings.access.payments_allowed:
-                await self.notifier.notify_user(
-                    user=data.temp_user, i18n_key="ntf-access.payments-disabled"
-                )
-                logger.info(
-                    f"Access denied for payment event for user '{data.telegram_id}' "
-                    f"because payments are disabled"
-                )
+        if data.is_payment_event and not settings.access.payments_allowed:
+            await self.notifier.notify_user(
+                user=data.temp_user, i18n_key="ntf-access.payments-disabled"
+            )
+            logger.info(
+                f"Access denied for payment event for user '{data.telegram_id}' "
+                f"because payments are disabled"
+            )
+            if user:
                 return await self._manage_waitlist(data.telegram_id)
+            return False
+
+        if user:
             return True
 
         return await self._process_new_user(data, settings)
@@ -76,8 +81,10 @@ class CheckAccess(Interactor[CheckAccessDto, bool]):
             return False
 
         if settings.access.mode == AccessMode.INVITED:
-            if data.is_referral_event:
-                logger.info(f"Access allowed for referral event for user '{data.telegram_id}'")
+            if data.is_referral_event or data.is_ad_link_event:
+                logger.info(
+                    f"Access allowed for referral/ad-link event for user '{data.telegram_id}'"
+                )
                 return True
 
             await self.notifier.notify_user(

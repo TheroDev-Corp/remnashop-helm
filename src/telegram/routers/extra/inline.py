@@ -14,9 +14,8 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import TranslatorRunner
+from src.application.common import BotService, TranslatorRunner
 from src.application.common.dao import UserDao
-from src.application.services import BotService
 from src.core.constants import INLINE_QUERY_INVITE
 
 router = Router(name=__name__)

@@ -2,7 +2,15 @@ from uuid import UUID
 
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import (
+from aiogram_dialog.widgets.text import Format
+from magic_filter import F
+
+from src.core.enums import BannerName, SubscriptionStatus
+from src.telegram.keyboards import back_main_menu_button
+from src.telegram.routers.dashboard.broadcast.handlers import on_content_input, on_preview
+from src.telegram.states import DashboardRemnashop, DashboardUser
+from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import (
     Button,
     Column,
     CopyText,
@@ -14,14 +22,6 @@ from aiogram_dialog.widgets.kbd import (
     Start,
     SwitchTo,
 )
-from aiogram_dialog.widgets.text import Format
-from magic_filter import F
-
-from src.core.enums import BannerName, SubscriptionStatus
-from src.telegram.keyboards import back_main_menu_button
-from src.telegram.routers.dashboard.broadcast.handlers import on_content_input, on_preview
-from src.telegram.states import DashboardUser, DashboardUsers
-from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 
 from .getters import (
     device_limit_getter,
@@ -47,6 +47,8 @@ from .getters import (
 )
 from .handlers import (
     on_active_toggle,
+    on_back_to_list,
+    on_back_to_referrals,
     on_block_toggle,
     on_current_subscription,
     on_device_delete,
@@ -58,6 +60,7 @@ from .handlers import (
     on_external_squad_select,
     on_give_access,
     on_give_subscription,
+    on_go_to_user,
     on_internal_squad_select,
     on_personal_discount_input,
     on_personal_discount_select,
@@ -66,6 +69,8 @@ from .handlers import (
     on_points_select,
     on_purchase_discount_input,
     on_purchase_discount_select,
+    on_referral_reset,
+    on_reissue_subscription,
     on_reset_traffic,
     on_role_select,
     on_send,
@@ -93,6 +98,13 @@ user = Window(
             on_click=on_current_subscription,
         ),
         when=F["has_subscription"],
+    ),
+    Row(
+        Button(
+            text=I18nFormat("btn-user.referral-reset"),
+            id="referral_reset",
+            on_click=on_referral_reset,
+        ),
     ),
     Row(
         SwitchTo(
@@ -165,11 +177,18 @@ user = Window(
         ),
     ),
     Row(
-        Start(
+        Button(
+            text=I18nFormat("btn-back.referrals"),
+            id="back_referrals",
+            on_click=on_back_to_referrals,
+            when=F["from_referral_user_id"],
+        ),
+    ),
+    Row(
+        Button(
             text=I18nFormat("btn-back.dashboard"),
             id="back",
-            state=DashboardUsers.MAIN,
-            mode=StartMode.RESET_STACK,
+            on_click=on_back_to_list,
         ),
     ),
     *back_main_menu_button,
@@ -232,6 +251,13 @@ subscription = Window(
             text=I18nFormat("btn-user.subscription-delete"),
             id="delete",
             on_click=on_subscription_delete,
+        ),
+    ),
+    Row(
+        Button(
+            text=I18nFormat("btn-user.subscription-reissue"),
+            id="reissue",
+            on_click=on_reissue_subscription,
         ),
     ),
     Row(
@@ -427,7 +453,7 @@ devices_list = Window(
         Row(
             CopyText(
                 text=Format("{item[platform]} - {item[device_model]}"),
-                copy_text=Format("{item[user_agent]}"),
+                copy_text=Format("{item[hwid]}"),
             ),
             Button(
                 text=Format("❌"),
@@ -574,7 +600,7 @@ referrals = Window(
         Select(
             text=Format("{item[telegram_id]} ({item[name]})"),
             id="referral_select",
-            item_id_getter=lambda item: item["telegram_id"],
+            item_id_getter=lambda item: item["id"],
             items="referrals",
             type_factory=int,
             on_click=on_user_select,
@@ -605,6 +631,7 @@ transactions_list = Window(
                 "btn-user.transaction",
                 status=F["item"]["status"],
                 created_at=F["item"]["created_at"],
+                gateway_type=F["item"]["gateway_type"],
             ),
             id="transaction_select",
             item_id_getter=lambda item: item["payment_id"],
@@ -633,10 +660,26 @@ transaction = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-user-transaction-info"),
     Row(
+        Button(
+            text=I18nFormat("btn-goto.user-profile"),
+            id="go_to_user",
+            on_click=on_go_to_user,
+            when=F["is_from_all_transactions"],
+        ),
+    ),
+    Row(
         SwitchTo(
             text=I18nFormat("btn-back.general"),
             id="back",
             state=DashboardUser.TRANSACTIONS_LIST,
+            when=~F["is_from_all_transactions"],
+        ),
+        Start(
+            text=I18nFormat("btn-back.general"),
+            id="back_all_transactions",
+            state=DashboardRemnashop.TRANSACTIONS,
+            mode=StartMode.RESET_STACK,
+            when=F["is_from_all_transactions"],
         ),
     ),
     IgnoreUpdate(),

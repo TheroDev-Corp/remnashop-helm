@@ -1,12 +1,14 @@
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import Button, Column, Group, Row, Select, Start, SwitchTo
 from magic_filter import F
 
+from src.application.common.policy import Permission
 from src.core.enums import AccessMode, BannerName
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import Dashboard, DashboardAccess
+from src.telegram.utils import require_permission
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Button, Column, Group, Row, Select, Start, SwitchTo
 
 from .getters import access_getter, channel_getter, conditions_getter, rules_getter
 from .handlers import (
@@ -72,21 +74,25 @@ conditions = Window(
             text=I18nFormat("btn-access.rules"),
             id="rules_edit",
             state=DashboardAccess.RULES,
+            when=require_permission(Permission.SETTINGS_REQUIREMENT),
         ),
         Button(
             text=I18nFormat("btn-access.condition-toggle", enabled=F["rules"]),
             id="rules",
             on_click=on_condition_toggle,
+            when=require_permission(Permission.SETTINGS_REQUIREMENT),
         ),
         SwitchTo(
             text=I18nFormat("btn-access.channel"),
             id="channel_edit",
             state=DashboardAccess.CHANNEL,
+            when=require_permission(Permission.SETTINGS_REQUIREMENT),
         ),
         Button(
             text=I18nFormat("btn-access.condition-toggle", enabled=F["channel"]),
             id="channel",
             on_click=on_condition_toggle,
+            when=require_permission(Permission.SETTINGS_REQUIREMENT),
         ),
         width=2,
     ),

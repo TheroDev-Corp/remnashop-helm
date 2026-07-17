@@ -20,7 +20,7 @@ async def system_getter(
 ) -> dict[str, Any]:
     stats = await remnawave_sdk.system.get_stats()
     metadata = await remnawave_sdk.system.get_metadata()
-    logger.success(stats)
+    logger.debug(f"Panel system stats: {stats}")
     return {
         "version": metadata.version,
         "cpu_cores": stats.cpu.cores,
@@ -83,10 +83,14 @@ async def hosts_getter(
             )
         )
 
+    if not hosts:
+        return {"pages": 0, "current_page": 0, "host": None, "is_empty": True}
+
     return {
         "pages": len(hosts),
         "current_page": current_page + 1,
         "host": hosts[current_page],
+        "is_empty": False,
     }
 
 
@@ -124,10 +128,14 @@ async def nodes_getter(
             )
         )
 
+    if not nodes:
+        return {"pages": 0, "current_page": 0, "node": None, "is_empty": True}
+
     return {
         "pages": len(nodes),
         "current_page": current_page + 1,
         "node": nodes[current_page],
+        "is_empty": False,
     }
 
 
@@ -160,8 +168,12 @@ async def inbounds_getter(
             )
         )
 
+    if not inbounds:
+        return {"pages": 0, "current_page": 0, "inbound": None, "is_empty": True}
+
     return {
         "pages": len(inbounds),
         "current_page": current_page + 1,
         "inbound": inbounds[current_page],
+        "is_empty": False,
     }

@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from loguru import logger
 
-from src.application.common import Interactor
+from src.application.common import BroadcastDispatcher, Interactor
 from src.application.common.dao import BroadcastDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
@@ -31,14 +31,14 @@ class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
         uow: UnitOfWork,
         broadcast_dao: BroadcastDao,
         get_broadcast_audience_count: GetBroadcastAudienceCount,
-    ):
+        broadcast_dispatcher: BroadcastDispatcher,
+    ) -> None:
         self.uow = uow
         self.broadcast_dao = broadcast_dao
         self.get_broadcast_audience_count = get_broadcast_audience_count
+        self.broadcast_dispatcher = broadcast_dispatcher
 
     async def _execute(self, actor: UserDto, data: StartBroadcastDto) -> UUID:
-        from src.infrastructure.taskiq.tasks.broadcast import send_broadcast_task  # noqa: PLC0415
-
         total_count = await self.get_broadcast_audience_count.system(
             GetBroadcastAudienceCountDto(data.audience, data.plan_id)
         )
@@ -55,71 +55,46 @@ class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
             await self.broadcast_dao.create(broadcast)
             await self.uow.commit()
 
-            await (
-                send_broadcast_task.kicker()
-                .with_task_id(str(task_id))
-                .kiq(
-                    broadcast,
-                    data.plan_id,
-                )  # type: ignore[call-overload]
-            )
+        await self.broadcast_dispatcher.start(broadcast, data.plan_id)
 
         logger.info(f"{actor.log} Scheduled broadcast initialization '{task_id}'")
         return task_id
 
 
-@dataclass(frozen=True)
-class DeleteBroadcastResultDto:
-    total: int
-    deleted: int
-    failed: int
-
-
-class DeleteBroadcast(Interactor[UUID, DeleteBroadcastResultDto]):
+class DeleteBroadcast(Interactor[UUID, None]):
     required_permission = Permission.BROADCAST
 
     def __init__(
         self,
-        uow: UnitOfWork,
         broadcast_dao: BroadcastDao,
-    ):
-        self.uow = uow
+        broadcast_dispatcher: BroadcastDispatcher,
+    ) -> None:
         self.broadcast_dao = broadcast_dao
+        self.broadcast_dispatcher = broadcast_dispatcher
 
-    async def _execute(self, actor: UserDto, data: UUID) -> DeleteBroadcastResultDto:
-        from src.infrastructure.taskiq.tasks.broadcast import delete_broadcast_task  # noqa: PLC0415
+    async def _execute(self, actor: UserDto, data: UUID) -> None:
+        broadcast = await self.broadcast_dao.get_by_task_id(data)
 
-        async with self.uow:
-            broadcast = await self.broadcast_dao.get_by_task_id(data)
+        if not broadcast:
+            logger.error(f"{actor.log} Failed to find broadcast '{data}' for deletion")
+            raise ValueError(f"Broadcast '{data}' not found")
 
-            if not broadcast:
-                logger.error(f"{actor.log} Failed to find broadcast '{data}' for deletion")
-                raise ValueError(f"Broadcast '{data}' not found")
+        if broadcast.status == BroadcastStatus.DELETED:
+            logger.warning(f"{actor.log} Broadcast '{data}' is already deleted")
+            raise ValueError("Broadcast already deleted")
 
-            if broadcast.status == BroadcastStatus.DELETED:
-                logger.warning(f"{actor.log} Broadcast '{data}' is already deleted")
-                raise ValueError("Broadcast already deleted")
+        # Deletion runs in the background; the task sets DELETED on completion. Do NOT
+        # mark DELETED here — a failed/timed-out task must stay retryable and must not
+        # falsely claim the Telegram messages were removed.
+        await self.broadcast_dispatcher.delete(broadcast)
 
-            await self.broadcast_dao.update_status(data, BroadcastStatus.DELETED)
-            await self.uow.commit()
-
-        logger.info(f"{actor.log} Initiated deletion for broadcast '{data}'")
-
-        task = await delete_broadcast_task.kiq(broadcast)  # type: ignore[call-overload]
-        result = await task.wait_result()
-        counts = result.return_value
-
-        logger.info(
-            f"{actor.log} Finished deletion for '{data}' "
-            f"(total: '{counts[0]}', deleted: '{counts[1]}', failed: '{counts[2]}')"
-        )
-        return DeleteBroadcastResultDto(total=counts[0], deleted=counts[1], failed=counts[2])
+        logger.info(f"{actor.log} Scheduled background deletion for broadcast '{data}'")
 
 
 class CancelBroadcast(Interactor[UUID, None]):
     required_permission = Permission.BROADCAST
 
-    def __init__(self, uow: UnitOfWork, broadcast_dao: BroadcastDao):
+    def __init__(self, uow: UnitOfWork, broadcast_dao: BroadcastDao) -> None:
         self.uow = uow
         self.broadcast_dao = broadcast_dao
 
@@ -153,7 +128,7 @@ class FinishBroadcastDto:
 class FinishBroadcast(Interactor[FinishBroadcastDto, None]):
     required_permission = None
 
-    def __init__(self, uow: UnitOfWork, broadcast_dao: BroadcastDao):
+    def __init__(self, uow: UnitOfWork, broadcast_dao: BroadcastDao) -> None:
         self.uow = uow
         self.broadcast_dao = broadcast_dao
 

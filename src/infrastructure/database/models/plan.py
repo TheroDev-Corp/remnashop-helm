@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from remnapy.enums.users import TrafficLimitStrategy
-from sqlalchemy import ARRAY, BigInteger, ForeignKey, Numeric
+from sqlalchemy import ARRAY, BigInteger, ForeignKey, Numeric, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.enums import Currency, PlanAvailability, PlanType
@@ -29,7 +29,8 @@ class Plan(BaseSql, TimestampMixin):
     traffic_limit: Mapped[int]
     device_limit: Mapped[int]
 
-    allowed_user_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger))
+    allowed_telegram_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger), server_default="{}")
+    allowed_emails: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default="{}")
     internal_squads: Mapped[list[UUID]]
     external_squad: Mapped[Optional[UUID]]
 
@@ -41,6 +42,7 @@ class Plan(BaseSql, TimestampMixin):
         back_populates="plan",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by="PlanDuration.order_index",
     )
 
 
@@ -48,7 +50,7 @@ class PlanDuration(BaseSql):
     __tablename__ = "plan_durations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"))
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
 
     days: Mapped[int]
     order_index: Mapped[int] = mapped_column(index=True)
@@ -67,10 +69,8 @@ class PlanPrice(BaseSql):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     plan_duration_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "plan_durations.id",
-            ondelete="CASCADE",
-        )
+        ForeignKey("plan_durations.id", ondelete="CASCADE"),
+        index=True,
     )
 
     currency: Mapped[Currency]

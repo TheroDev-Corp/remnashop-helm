@@ -5,10 +5,9 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import Notifier, TranslatorRunner
+from src.application.common import BotService, Notifier, TranslatorRunner
 from src.application.common.dao import SettingsDao
-from src.application.dto import MessagePayloadDto, UserDto
-from src.application.services import BotService
+from src.application.dto import MessagePayloadDto, TelegramUserDto
 from src.core.enums import Command
 from src.telegram.keyboards import get_contact_support_keyboard
 
@@ -19,7 +18,7 @@ router = Router(name=__name__)
 @router.message(FilterCommand(Command.PAYSUPPORT.value.command))
 async def on_paysupport_command(
     message: Message,
-    user: UserDto,
+    user: TelegramUserDto,
     bot_service: FromDishka[BotService],
     i18n: FromDishka[TranslatorRunner],
     notifier: FromDishka[Notifier],
@@ -42,7 +41,7 @@ async def on_paysupport_command(
 @router.message(FilterCommand(Command.RULES.value.command))
 async def on_rules_command(
     message: Message,
-    user: UserDto,
+    user: TelegramUserDto,
     notifier: FromDishka[Notifier],
     settings_dao: FromDishka[SettingsDao],
 ) -> None:
@@ -64,7 +63,7 @@ async def on_rules_command(
 @router.message(FilterCommand(Command.HELP.value.command))
 async def on_help_command(
     message: Message,
-    user: UserDto,
+    user: TelegramUserDto,
     bot_service: FromDishka[BotService],
     i18n: FromDishka[TranslatorRunner],
     notifier: FromDishka[Notifier],

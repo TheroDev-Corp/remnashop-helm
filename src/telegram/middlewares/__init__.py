@@ -19,9 +19,11 @@ def setup_middlewares(router: Router) -> None:
         AccessMiddleware(),
         ErrorMiddleware(),
         UserMiddleware(),
+        # Throttle before the heavier Rules/Channel checks (DB/Telegram API) so flood
+        # is short-circuited early.
+        ThrottlingMiddleware(),
         RulesMiddleware(),
         ChannelMiddleware(),
-        ThrottlingMiddleware(),
     ]
 
     inner_middlewares: list[EventTypedMiddleware] = [

@@ -18,7 +18,7 @@ class ReferralDto(BaseDto, TrackableMixin, TimestampMixin):
 
 @dataclass(kw_only=True)
 class ReferralRewardDto(BaseDto, TrackableMixin, TimestampMixin):
-    user_telegram_id: int
+    user_id: int
 
     type: ReferralRewardType
     amount: int
@@ -27,3 +27,14 @@ class ReferralRewardDto(BaseDto, TrackableMixin, TimestampMixin):
     @property
     def rewarded_at(self) -> Optional[datetime]:
         return self.created_at
+
+
+@dataclass(frozen=True)
+class UserReferralStatsDto:
+    referrer_telegram_id: Optional[int]
+    referrer_email: Optional[str]
+    referrer_username: Optional[str]
+    referrals_level_1: int
+    referrals_level_2: int
+    reward_points: int
+    reward_days: int

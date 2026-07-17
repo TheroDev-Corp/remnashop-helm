@@ -1,15 +1,13 @@
 from typing import Any
 
-from adaptix import Retort
 from aiogram_dialog import DialogManager
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 
-from src.application.common import TranslatorRunner
+from src.application.common import BotService, TranslatorRunner
 from src.application.common.dao import BroadcastDao, PlanDao, SettingsDao
 from src.application.dto import PlanDto
-from src.application.services import BotService
-from src.core.constants import DATETIME_FORMAT
+from src.core.constants import DATETIME_VIEW_FORMAT
 from src.telegram.keyboards import CLOSE_BUTTON_ID, get_broadcast_buttons
 
 
@@ -92,7 +90,7 @@ async def list_getter(
         {
             "task_id": broadcast.task_id,
             "status": broadcast.status,
-            "created_at": broadcast.created_at.strftime(DATETIME_FORMAT),  # type: ignore[union-attr]
+            "created_at": broadcast.created_at.strftime(DATETIME_VIEW_FORMAT),  # type: ignore[union-attr]
         }
         for broadcast in broadcasts
     ]
@@ -104,7 +102,6 @@ async def list_getter(
 async def view_getter(
     dialog_manager: DialogManager,
     broadcast_dao: FromDishka[BroadcastDao],
-    retort: FromDishka[Retort],
     **kwargs: Any,
 ) -> dict[str, Any]:
     task_id = dialog_manager.dialog_data.get("task_id")
@@ -117,13 +114,11 @@ async def view_getter(
     if not broadcast:
         raise ValueError(f"Broadcast '{task_id}' not found")
 
-    dialog_manager.dialog_data["payload"] = retort.dump(broadcast.payload)
-
     return {
         "broadcast_id": str(broadcast.task_id),
         "broadcast_status": broadcast.status,
         "audience_type": broadcast.audience,
-        "created_at": broadcast.created_at.strftime(DATETIME_FORMAT),  # type: ignore[union-attr]
+        "created_at": broadcast.created_at.strftime(DATETIME_VIEW_FORMAT),  # type: ignore[union-attr]
         "total_count": broadcast.total_count,
         "success_count": broadcast.success_count,
         "failed_count": broadcast.failed_count,

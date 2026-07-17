@@ -1,6 +1,4 @@
-from typing import Callable, Protocol, runtime_checkable
-
-from dishka import AsyncContainer
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from src.application.events import BaseEvent
 
@@ -16,4 +14,4 @@ class EventSubscriber(Protocol):
 
     async def shutdown(self) -> None: ...
 
-    def set_container_factory(self, factory: Callable[[], AsyncContainer]) -> None: ...
+    def set_container_factory(self, factory: Callable[[], Any]) -> None: ...

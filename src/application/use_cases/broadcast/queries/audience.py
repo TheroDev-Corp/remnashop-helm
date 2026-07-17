@@ -16,12 +16,25 @@ class GetBroadcastAudienceCountDto:
     plan_id: Optional[int] = None
 
 
+class HasAvailableBroadcastPlans(Interactor[None, bool]):
+    required_permission = Permission.BROADCAST
+
+    def __init__(self, plan_dao: PlanDao) -> None:
+        self.plan_dao = plan_dao
+
+    async def _execute(self, actor: UserDto, data: None) -> bool:
+        return await self.plan_dao.count_non_trial() > 0
+
+
 class GetBroadcastAudienceCount(Interactor[GetBroadcastAudienceCountDto, int]):
     required_permission = Permission.BROADCAST
 
-    def __init__(self, user_dao: UserDao, plan_dao: PlanDao, subscription_dao: SubscriptionDao):
+    def __init__(
+        self,
+        user_dao: UserDao,
+        subscription_dao: SubscriptionDao,
+    ) -> None:
         self.user_dao = user_dao
-        self.plan_dao = plan_dao
         self.subscription_dao = subscription_dao
 
     async def _execute(self, actor: UserDto, data: GetBroadcastAudienceCountDto) -> int:
@@ -29,10 +42,9 @@ class GetBroadcastAudienceCount(Interactor[GetBroadcastAudienceCountDto, int]):
         plan_id = data.plan_id
 
         if audience == BroadcastAudience.PLAN:
-            if plan_id:
-                count = await self.subscription_dao.count_active_by_plan(plan_id)
-            else:
-                count = await self.plan_dao.count_non_trial()
+            if not plan_id:
+                raise ValueError("PLAN audience requires a plan_id to count its size")
+            count = await self.subscription_dao.count_active_by_plan(plan_id)
 
         elif audience == BroadcastAudience.ALL:
             count = await self.user_dao.count_active_non_blocked()
@@ -66,14 +78,16 @@ class GetBroadcastAudienceUsersDto:
 class GetBroadcastAudienceUsers(Interactor[GetBroadcastAudienceUsersDto, list[UserDto]]):
     required_permission = Permission.BROADCAST
 
-    def __init__(self, user_dao: UserDao):
+    def __init__(self, user_dao: UserDao) -> None:
         self.user_dao = user_dao
 
     async def _execute(self, actor: UserDto, data: GetBroadcastAudienceUsersDto) -> list[UserDto]:
         audience = data.audience
         plan_id = data.plan_id
 
-        if audience == BroadcastAudience.PLAN and plan_id:
+        if audience == BroadcastAudience.PLAN:
+            if plan_id is None:
+                raise ValueError("plan_id is required for PLAN audience")
             users = await self.user_dao.get_active_by_plan(plan_id)
         elif audience == BroadcastAudience.ALL:
             users = await self.user_dao.get_active_non_blocked()

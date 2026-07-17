@@ -32,15 +32,18 @@ class PlanDaoImpl(PlanDao):
 
     async def create(self, plan: PlanDto) -> PlanDto:
         plan_data = self.retort.dump(plan)
+        plan_data.pop("id", None)
         durations_data = plan_data.pop("durations", [])
 
         db_plan = Plan(**plan_data)
 
         for duration_data in durations_data:
+            duration_data.pop("id", None)
             prices_data = duration_data.pop("prices", [])
             db_duration = PlanDuration(**duration_data)
 
             for price_data in prices_data:
+                price_data.pop("id", None)
                 db_duration.prices.append(PlanPrice(**price_data))
 
             db_plan.durations.append(db_duration)
@@ -238,3 +241,8 @@ class PlanDaoImpl(PlanDao):
         count = await self.session.scalar(stmt) or 0
         logger.debug(f"Counted '{count}' non-trial active plans")
         return count
+
+    async def set_order_index(self, plan_id: int, order_index: int) -> None:
+        stmt = update(Plan).where(Plan.id == plan_id).values(order_index=order_index)
+        await self.session.execute(stmt)
+        logger.debug(f"Plan '{plan_id}' order_index set to '{order_index}'")

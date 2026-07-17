@@ -30,6 +30,7 @@ class Permission(UpperStrEnum):
     VIEW_USERS = auto()
     VIEW_BROADCAST = auto()
     VIEW_PROMOCODE = auto()
+    MANAGE_PROMOCODE = auto()
     VIEW_ACCESS = auto()
     VIEW_REMNAWAVE = auto()
     VIEW_REMNASHOP = auto()
@@ -43,6 +44,9 @@ class Permission(UpperStrEnum):
     VIEW_LOGS = auto()
     VIEW_AUDIT = auto()
     VIEW_MENU_EDITOR = auto()
+    VIEW_BACKUP = auto()
+    VIEW_EXTRA_SETTINGS = auto()
+    VIEW_BLACKLIST = auto()
     #
     SETTINGS_REFERRAL = auto()
     SETTINGS_NOTIFICATIONS = auto()
@@ -50,6 +54,8 @@ class Permission(UpperStrEnum):
     SETTINGS_ACCESS = auto()
     SETTINGS_MENU = auto()
     SETTINGS_CURRENCY = auto()
+    SETTINGS_BACKUP = auto()
+    SETTINGS_EXTRA = auto()
     #
     REMNASHOP_GATEWAYS = auto()
     REMNASHOP_PLAN_EDITOR = auto()
@@ -63,6 +69,7 @@ class Permission(UpperStrEnum):
     ASSIGN_ROLE = auto()
     REVOKE_ROLE = auto()
     UNBLOCK_ALL = auto()
+    BLACKLIST = auto()
 
 
 ROLE_PERMISSIONS: Final[dict[Role, set[Permission]]] = {
@@ -70,12 +77,36 @@ ROLE_PERMISSIONS: Final[dict[Role, set[Permission]]] = {
     Role.OWNER: set(Permission),
     Role.DEV: set(Permission),
     Role.ADMIN: {
+        # View
         Permission.VIEW_DASHBOARD,
+        Permission.VIEW_USERS,
+        Permission.VIEW_PROMOCODE,
+        Permission.MANAGE_PROMOCODE,
         Permission.VIEW_ACCESS,
+        # Actions
+        Permission.SETTINGS_ACCESS,
+        Permission.USER_SEARCH,
+        Permission.USER_EDITOR,
+        Permission.USER_SUBSCRIPTION_EDITOR,
+        Permission.USER_SYNC,
     },
     Role.PREVIEW: {  # TODO: Implement demo Bot instance
         Permission.VIEW_DASHBOARD,
+        Permission.VIEW_STATISTICS,
+        Permission.VIEW_USERS,
+        Permission.VIEW_BROADCAST,
+        Permission.VIEW_PROMOCODE,
         Permission.VIEW_ACCESS,
+        Permission.VIEW_REMNAWAVE,
+        Permission.VIEW_REMNASHOP,
+        Permission.VIEW_GATEWAYS,
+        Permission.VIEW_REFERRAL,
+        Permission.VIEW_ADVERTISING,
+        Permission.VIEW_PLANS,
+        Permission.VIEW_NOTIFICATIONS,
+        Permission.VIEW_LOGS,
+        Permission.VIEW_MENU_EDITOR,
+        Permission.USER_SEARCH,
     },
     Role.USER: set(),
 }

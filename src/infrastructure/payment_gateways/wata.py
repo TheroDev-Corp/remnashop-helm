@@ -2,7 +2,7 @@ import uuid
 from base64 import b64decode
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any, Final, Union
 from uuid import UUID
 
 import orjson
@@ -18,6 +18,7 @@ from loguru import logger
 from src.application.dto import PaymentGatewayDto, PaymentResultDto
 from src.application.dto.payment_gateway import WataGatewaySettingsDto
 from src.core.config import AppConfig
+from src.core.constants import TTL_6H
 from src.core.enums import TransactionStatus
 
 from .base import BasePaymentGateway
@@ -29,7 +30,6 @@ class WataGateway(BasePaymentGateway):
 
     API_BASE: Final[str] = "https://api.wata.pro/api/h2h"
 
-    _PUBLIC_KEY_TTL_SECONDS: Final[int] = 6 * 60 * 60
     _public_key_pem: bytes | None = None
     _public_key_loaded_at: datetime | None = None
 
@@ -74,7 +74,7 @@ class WataGateway(BasePaymentGateway):
             logger.exception(f"An unexpected error occurred while creating payment: {e}")
             raise
 
-    async def handle_webhook(self, request: Request) -> tuple[UUID, TransactionStatus]:
+    async def handle_webhook(self, request: Request) -> Union[tuple[UUID, TransactionStatus], None]:
         logger.debug(f"Received {self.__class__.__name__} webhook request")
 
         raw_body = await request.body()
@@ -130,7 +130,7 @@ class WataGateway(BasePaymentGateway):
         cache_valid = (
             self._public_key_pem is not None
             and self._public_key_loaded_at is not None
-            and (now - self._public_key_loaded_at).total_seconds() < self._PUBLIC_KEY_TTL_SECONDS
+            and (now - self._public_key_loaded_at).total_seconds() < TTL_6H
         )
         if cache_valid and not force_refresh:
             return self._public_key_pem  # type: ignore[return-value]

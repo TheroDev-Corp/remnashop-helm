@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, ForeignKey
+from sqlalchemy import ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.enums import ReferralLevel, ReferralRewardType
@@ -12,14 +12,14 @@ class Referral(BaseSql, TimestampMixin):
     __tablename__ = "referrals"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    referrer_telegram_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("users.telegram_id"),
+    referrer_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
         index=True,
     )
-    referred_telegram_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("users.telegram_id"),
+    referred_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
         index=True,
         unique=True,
     )
@@ -28,11 +28,11 @@ class Referral(BaseSql, TimestampMixin):
 
     referrer: Mapped["User"] = relationship(
         lazy="selectin",
-        foreign_keys=[referrer_telegram_id],
+        foreign_keys=[referrer_id],
     )
     referred: Mapped["User"] = relationship(
         lazy="selectin",
-        foreign_keys=[referred_telegram_id],
+        foreign_keys=[referred_id],
     )
     rewards: Mapped[list["ReferralReward"]] = relationship(
         back_populates="referral",
@@ -45,10 +45,13 @@ class ReferralReward(BaseSql, TimestampMixin):
     __tablename__ = "referral_rewards"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    referral_id: Mapped[int] = mapped_column(ForeignKey("referrals.id"))
-    user_telegram_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("users.telegram_id"),
+    referral_id: Mapped[int] = mapped_column(
+        ForeignKey("referrals.id", ondelete="CASCADE"),
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
         index=True,
     )
 
@@ -62,4 +65,4 @@ class ReferralReward(BaseSql, TimestampMixin):
         foreign_keys=[referral_id],
     )
 
-    user: Mapped["User"] = relationship(lazy="selectin", foreign_keys=[user_telegram_id])
+    user: Mapped["User"] = relationship(lazy="selectin", foreign_keys=[user_id])

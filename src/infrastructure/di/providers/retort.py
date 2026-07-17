@@ -6,19 +6,22 @@ from adaptix import (
     P,
     Retort,
     as_is_dumper,
-    as_is_loader,
     dumper,
     loader,
     name_mapping,
 )
 from adaptix._internal.provider.loc_stack_filtering import OriginSubclassLSC
 from adaptix.conversion import ConversionRetort, coercer, link_function
+from aiogram.enums import ButtonStyle
 from dishka import Provider, Scope, provide
 from pydantic import SecretStr, TypeAdapter
 
 from src.application.common import Cryptographer
 from src.application.dto import (
     AccessSettingsDto,
+    BackupSettingsDto,
+    BlacklistSettingsDto,
+    ExtraSettingsDto,
     MenuButtonDto,
     MenuSettingsDto,
     MessagePayloadDto,
@@ -27,6 +30,7 @@ from src.application.dto import (
     PriceDetailsDto,
     ReferralSettingsDto,
     RequirementSettingsDto,
+    ResetFeatureSettingsDto,
 )
 from src.application.dto.payment_gateway import (
     CryptomusGatewaySettingsDto,
@@ -37,7 +41,9 @@ from src.application.dto.payment_gateway import (
     PayMasterGatewaySettingsDto,
     PlategaGatewaySettingsDto,
     RoboKassaGatewaySettingsDto,
+    TelegramStarsGatewaySettingsDto,
     UrlPayGatewaySettingsDto,
+    ValutixGatewaySettingsDto,
     WataGatewaySettingsDto,
     YooKassaGatewaySettingsDto,
     YooMoneyGatewaySettingsDto,
@@ -62,7 +68,10 @@ class RetortProvider(Provider):
                 dumper(P[MessagePayloadDto].reply_markup, lambda x: x.model_dump() if x else None),
                 dumper(P[MessagePayloadDto].media_type, lambda x: MediaType(x) if x else None),
                 #
-                as_is_loader(datetime),
+                loader(
+                    datetime,
+                    lambda x: x if isinstance(x, datetime) else datetime.fromisoformat(x),
+                ),
                 as_is_dumper(datetime),
                 name_mapping(extra_in=ExtraSkip()),
                 #
@@ -72,6 +81,10 @@ class RetortProvider(Provider):
                 ),
                 dumper(OriginSubclassLSC(StorageKey), serialize_storage_key),
                 #
+                loader(
+                    P[MenuButtonDto].color,
+                    lambda x: ButtonStyle(x) if x else None,
+                ),
                 loader(SecretStr, SecretStr),
                 dumper(
                     SecretStr, lambda v: v.get_secret_value() if isinstance(v, SecretStr) else v
@@ -90,6 +103,7 @@ class RetortProvider(Provider):
     ) -> ConversionRetort:
         def get_settings_dto(pg_type: PaymentGatewayType, settings_dict: dict) -> Any:
             type_mapping = {
+                PaymentGatewayType.TELEGRAM_STARS: TelegramStarsGatewaySettingsDto,
                 PaymentGatewayType.YOOKASSA: YooKassaGatewaySettingsDto,
                 PaymentGatewayType.YOOMONEY: YooMoneyGatewaySettingsDto,
                 PaymentGatewayType.CRYPTOMUS: CryptomusGatewaySettingsDto,
@@ -101,6 +115,7 @@ class RetortProvider(Provider):
                 PaymentGatewayType.PLATEGA: PlategaGatewaySettingsDto,
                 PaymentGatewayType.ROBOKASSA: RoboKassaGatewaySettingsDto,
                 PaymentGatewayType.URLPAY: UrlPayGatewaySettingsDto,
+                PaymentGatewayType.VALUTIX: ValutixGatewaySettingsDto,
                 PaymentGatewayType.WATA: WataGatewaySettingsDto,
             }
 
@@ -130,7 +145,11 @@ class RetortProvider(Provider):
                     dict, NotificationsSettingsDto, retort.get_loader(NotificationsSettingsDto)
                 ),
                 coercer(dict, ReferralSettingsDto, retort.get_loader(ReferralSettingsDto)),
+                coercer(dict, BackupSettingsDto, retort.get_loader(BackupSettingsDto)),
+                coercer(dict, BlacklistSettingsDto, retort.get_loader(BlacklistSettingsDto)),
                 coercer(dict, MenuSettingsDto, retort.get_loader(MenuSettingsDto)),
+                coercer(dict, ExtraSettingsDto, retort.get_loader(ExtraSettingsDto)),
+                coercer(dict, ResetFeatureSettingsDto, retort.get_loader(ResetFeatureSettingsDto)),
                 coercer(dict, MenuButtonDto, retort.get_loader(MenuButtonDto)),
                 #
                 coercer(dict, PriceDetailsDto, retort.get_loader(PriceDetailsDto)),
@@ -139,6 +158,7 @@ class RetortProvider(Provider):
                 *[
                     coercer(dict, dto_class, retort.get_loader(dto_class))
                     for dto_class in [
+                        TelegramStarsGatewaySettingsDto,
                         YooKassaGatewaySettingsDto,
                         YooMoneyGatewaySettingsDto,
                         CryptomusGatewaySettingsDto,
@@ -150,6 +170,7 @@ class RetortProvider(Provider):
                         PlategaGatewaySettingsDto,
                         RoboKassaGatewaySettingsDto,
                         UrlPayGatewaySettingsDto,
+                        ValutixGatewaySettingsDto,
                         WataGatewaySettingsDto,
                     ]
                 ],

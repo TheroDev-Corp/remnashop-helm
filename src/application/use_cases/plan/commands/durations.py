@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from decimal import Decimal
 
 from loguru import logger
 
 from src.application.common import Interactor
 from src.application.common.policy import Permission
 from src.application.dto import PlanDto, PlanDurationDto, PlanPriceDto, UserDto
+from src.core.constants import DEFAULT_DURATION_PRICES
 from src.core.enums import Currency
 from src.core.exceptions import DurationAlreadyExistsError
 
@@ -36,7 +36,7 @@ class AddPlanDuration(Interactor[AddPlanDurationDto, PlanDto]):
 
         new_duration = PlanDurationDto(
             days=days,
-            prices=[PlanPriceDto(currency=c, price=Decimal(100)) for c in Currency],
+            prices=[PlanPriceDto(currency=c, price=DEFAULT_DURATION_PRICES[c]) for c in Currency],
         )
 
         data.plan.durations.append(new_duration)

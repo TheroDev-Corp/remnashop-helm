@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 from dishka import Provider, Scope, provide
 from httpx import AsyncClient, Timeout
 from loguru import logger
@@ -10,7 +12,7 @@ class RemnawaveProvider(Provider):
     scope = Scope.APP
 
     @provide
-    def get_remnawave(self, config: AppConfig) -> RemnawaveSDK:
+    async def get_remnawave(self, config: AppConfig) -> AsyncIterator[RemnawaveSDK]:
         logger.debug("Initializing RemnawaveSDK")
 
         headers = {}
@@ -31,4 +33,8 @@ class RemnawaveProvider(Provider):
             timeout=Timeout(connect=15.0, read=25.0, write=10.0, pool=5.0),
         )
 
-        return RemnawaveSDK(client)
+        try:
+            yield RemnawaveSDK(client)
+        finally:
+            await client.aclose()
+            logger.debug("RemnawaveSDK AsyncClient closed")

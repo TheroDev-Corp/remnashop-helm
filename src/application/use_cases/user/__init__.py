@@ -2,21 +2,34 @@ from typing import Final
 
 from src.application.common import Interactor
 
-from .commands.blocking import SetBotBlockedStatus, ToggleUserBlockedStatus, UnblockAllUsers
+from .commands.activity import TrackUserActivity
+from .commands.blocking import (
+    BlockUsersByIds,
+    ClearBlockedIds,
+    SetBotBlockedStatus,
+    ToggleUserBlockedStatus,
+    UnblockAllUsers,
+)
 from .commands.messaging import SendMessageToUser
 from .commands.profile_edit import (
     ChangeUserPoints,
+    ResetOwnReferralCode,
+    ResetUserReferralCode,
     SetUserPersonalDiscount,
     SetUserPurchaseDiscount,
     ToggleUserTrialAvailable,
 )
-from .commands.registration import GetOrCreateUser, UpdateUserFromTelegram
+from .commands.registration import GetOrCreateUser, UpdateUserProfile
 from .commands.roles import GetAdmins, RevokeRole, SetUserRole
+from .commands.web_registration import RegisterWebUser
+from .queries.activity import GetRecentActivityUsers
 from .queries.plans import GetAvailablePlanByCode, GetAvailablePlans, GetAvailableTrial
 from .queries.profile import GetUserDevices, GetUserProfile, GetUserProfileSubscription
-from .queries.search import SearchUsers
+from .queries.search import SearchUsers, SmartSearch
 
 USER_USE_CASES: Final[tuple[type[Interactor], ...]] = (
+    BlockUsersByIds,
+    ClearBlockedIds,
     GetAdmins,
     GetOrCreateUser,
     SetBotBlockedStatus,
@@ -24,6 +37,7 @@ USER_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     RevokeRole,
     SetUserRole,
     SearchUsers,
+    SmartSearch,
     UnblockAllUsers,
     GetUserProfile,
     GetUserProfileSubscription,
@@ -33,8 +47,13 @@ USER_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     SetUserPurchaseDiscount,
     ToggleUserTrialAvailable,
     ChangeUserPoints,
+    ResetOwnReferralCode,
+    ResetUserReferralCode,
     SendMessageToUser,
     GetAvailableTrial,
     GetAvailablePlanByCode,
-    UpdateUserFromTelegram,
+    UpdateUserProfile,
+    RegisterWebUser,
+    TrackUserActivity,
+    GetRecentActivityUsers,
 )

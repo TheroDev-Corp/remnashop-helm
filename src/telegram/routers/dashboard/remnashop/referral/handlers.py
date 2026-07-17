@@ -6,7 +6,7 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 
 from src.application.common import Notifier
-from src.application.dto import UserDto
+from src.application.dto import TelegramUserDto
 from src.application.use_cases.settings.commands.referral import (
     ToggleReferralSystem,
     UpdateReferralAccrualStrategy,
@@ -31,7 +31,7 @@ async def on_enable_toggle(
     dialog_manager: DialogManager,
     toggle_referral_system: FromDishka[ToggleReferralSystem],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     await toggle_referral_system(user)
 
 
@@ -43,7 +43,7 @@ async def on_level_select(
     selected_level: int,
     update_referral_level: FromDishka[UpdateReferralLevel],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     await update_referral_level(user, selected_level)
     await dialog_manager.switch_to(state=RemnashopReferral.MAIN)
 
@@ -56,7 +56,7 @@ async def on_reward_select(
     selected_reward: ReferralRewardType,
     update_reward_type: FromDishka[UpdateReferralRewardType],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     await update_reward_type(user, selected_reward)
     await dialog_manager.switch_to(state=RemnashopReferral.MAIN)
 
@@ -69,7 +69,7 @@ async def on_accrual_strategy_select(
     selected_strategy: ReferralAccrualStrategy,
     update_strategy: FromDishka[UpdateReferralAccrualStrategy],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     await update_strategy(user, selected_strategy)
     await dialog_manager.switch_to(state=RemnashopReferral.MAIN)
 
@@ -82,7 +82,7 @@ async def on_reward_strategy_select(
     selected_strategy: ReferralRewardStrategy,
     update_reward_strategy: FromDishka[UpdateReferralRewardStrategy],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     await update_reward_strategy(user, selected_strategy)
     await dialog_manager.switch_to(state=RemnashopReferral.MAIN)
 
@@ -96,7 +96,7 @@ async def on_reward_input(
     update_reward_config: FromDishka[UpdateReferralRewardConfig],
 ) -> None:
     dialog_manager.show_mode = ShowMode.EDIT
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
 
     if not message.text:
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")

@@ -1,5 +1,4 @@
 from adaptix import Retort
-from aiogram import Bot
 from aiogram.types import CallbackQuery, Message
 from aiogram_dialog import DialogManager, ShowMode
 from aiogram_dialog.widgets.input import MessageInput
@@ -11,16 +10,19 @@ from redis.asyncio import Redis
 from remnapy import RemnawaveSDK
 
 from src.application.common import Notifier
-from src.application.dto import MessagePayloadDto, UserDto
-from src.application.use_cases.importer.commands.processing import ProcessImportFile
+from src.application.dto import MessagePayloadDto, TelegramUserDto
+from src.application.use_cases.importer.commands.processing import (
+    ProcessImportFile,
+    ProcessImportFileDto,
+)
 from src.core.constants import USER_KEY
-from src.infrastructure.redis.keys import ImportRunningKey, SyncRunningKey
+from src.infrastructure.redis.keys import ImportRunningKey, SyncBotRunningKey, SyncPanelRunningKey
 from src.infrastructure.taskiq.tasks.importer import (
     import_exported_users_task,
+    sync_all_users_from_bot_task,
     sync_all_users_from_panel_task,
 )
 from src.telegram.states import DashboardImporter
-from src.telegram.utils import is_double_click
 
 
 @inject
@@ -28,12 +30,11 @@ async def on_database_input(
     message: Message,
     widget: MessageInput,
     dialog_manager: DialogManager,
-    bot: FromDishka[Bot],
     notifier: FromDishka[Notifier],
     process_import_file: FromDishka[ProcessImportFile],
 ) -> None:
     dialog_manager.show_mode = ShowMode.EDIT
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     logger.debug(f"{user.log} Processing database upload")
 
     document = message.document
@@ -42,7 +43,13 @@ async def on_database_input(
         return
 
     try:
-        result = await process_import_file(user, document)
+        result = await process_import_file(
+            user,
+            ProcessImportFileDto(
+                file_id=document.file_id,
+                file_name=document.file_name or document.file_id,
+            ),
+        )
     except Exception as exception:
         logger.exception(f"Failed to process database: {exception}")
         await notifier.notify_user(user, i18n_key="ntf-importer.db-failed")
@@ -69,7 +76,7 @@ async def on_squads(
     remnawave_sdk: FromDishka[RemnawaveSDK],
     notifier: FromDishka[Notifier],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     result = await remnawave_sdk.internal_squads.get_internal_squads()
 
     if not result.internal_squads:
@@ -86,7 +93,7 @@ async def on_squad_select(
     dialog_manager: DialogManager,
     selected_squad: str,
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     selected_squads: list = dialog_manager.dialog_data.get("selected_squads", [])
 
     if selected_squad in selected_squads:
@@ -104,27 +111,39 @@ async def on_import_all_xui(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
+    retort: FromDishka[Retort],
+    redis: FromDishka[Redis],
     notifier: FromDishka[Notifier],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     users = dialog_manager.dialog_data["users"]
     selected_squads = dialog_manager.dialog_data.get("selected_squads", [])
+
+    key = retort.dump(ImportRunningKey())
 
     if not selected_squads:
         await notifier.notify_user(user, i18n_key="ntf-common.internal-squads-empty")
         return
 
+    if await redis.get(key):
+        await notifier.notify_user(user, i18n_key="ntf-importer.already-running")
+        return
+
+    await redis.set(key, 1, ex=600)
+
     dialog_manager.dialog_data["has_started"] = True
     notification = await notifier.notify_user(
         user,
-        payload=MessagePayloadDto(i18n_key="ntf-importer.import-started", delete_after=None),
+        payload=MessagePayloadDto(i18n_key="ntf-importer.started", delete_after=None),
     )
 
-    task = await import_exported_users_task.kiq(users["all"], selected_squads)  # type: ignore[call-overload]
-
-    logger.info(f"{user.log} Started import '{len(users['all'])}' users")
-    result = await task.wait_result()
-    success_count, failed_count = result.return_value
+    try:
+        task = await import_exported_users_task.kiq(users["all"], selected_squads)  # type: ignore[call-overload]
+        logger.info(f"{user.log} Started import '{len(users['all'])}' users")
+        result = await task.wait_result()
+        success_count, failed_count = result.return_value
+    finally:
+        await redis.delete(key)
 
     if notification:
         await notification.delete()
@@ -146,11 +165,15 @@ async def on_import_active_xui(
     redis: FromDishka[Redis],
     notifier: FromDishka[Notifier],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     users = dialog_manager.dialog_data["users"]
     selected_squads = dialog_manager.dialog_data.get("selected_squads", [])
 
     key = retort.dump(ImportRunningKey())
+
+    if not selected_squads:
+        await notifier.notify_user(user, i18n_key="ntf-common.internal-squads-empty")
+        return
 
     if await redis.get(key):
         await notifier.notify_user(user, i18n_key="ntf-importer.already-running")
@@ -158,20 +181,19 @@ async def on_import_active_xui(
 
     await redis.set(key, 1, ex=600)
 
-    if not selected_squads:
-        await notifier.notify_user(user, i18n_key="ntf-common.internal-squads-empty")
-        return
-
     dialog_manager.dialog_data["has_started"] = True
     notification = await notifier.notify_user(
         user,
         payload=MessagePayloadDto(i18n_key="ntf-importer.started", delete_after=None),
     )
 
-    task = await import_exported_users_task.kiq(users["active"], selected_squads)  # type: ignore[call-overload]
-    logger.info(f"{user.log} Started import '{len(users['active'])}' users")
-    result = await task.wait_result()
-    success_count, failed_count = result.return_value
+    try:
+        task = await import_exported_users_task.kiq(users["active"], selected_squads)  # type: ignore[call-overload]
+        logger.info(f"{user.log} Started import '{len(users['active'])}' users")
+        result = await task.wait_result()
+        success_count, failed_count = result.return_value
+    finally:
+        await redis.delete(key)
 
     if notification:
         await notification.delete()
@@ -182,12 +204,11 @@ async def on_import_active_xui(
         "failed_count": failed_count,
     }
 
-    await redis.delete(key)
     await dialog_manager.switch_to(state=DashboardImporter.IMPORT_COMPLETED)
 
 
 @inject
-async def on_sync(
+async def on_sync_from_panel(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
@@ -195,41 +216,79 @@ async def on_sync(
     redis: FromDishka[Redis],
     notifier: FromDishka[Notifier],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
 
     # TODO: before check squads subscription_dao.get_all_active_internal_squads()
-    key = retort.dump(SyncRunningKey())
+    key = retort.dump(SyncPanelRunningKey())
 
     if await redis.get(key):
         await notifier.notify_user(user, i18n_key="ntf-sync.already-running")
         return
 
-    if is_double_click(
-        dialog_manager,
-        key="sync_confirm",
-        cooldown=10,
-    ):
-        await redis.set(key, value=1, ex=600)
+    await redis.set(key, value=1, ex=600)
 
-        notification = await notifier.notify_user(
-            user,
-            payload=MessagePayloadDto(i18n_key="ntf-sync.started", delete_after=None),
-        )
+    notification = await notifier.notify_user(
+        user,
+        payload=MessagePayloadDto(i18n_key="ntf-sync.from-panel-started", delete_after=None),
+    )
 
+    try:
         task = await sync_all_users_from_panel_task.kiq()  # type: ignore[call-overload]
         result = await task.wait_result()
         result = result.return_value
+    finally:
+        await redis.delete(key)
 
-        if not result:
-            await notifier.notify_user(user, i18n_key="ntf-sync.users-not-found")
-            return
-
-        dialog_manager.dialog_data["completed"] = result
-
-        if notification:
-            await notification.delete()
-
-        await dialog_manager.switch_to(state=DashboardImporter.SYNC_COMPLETED)
+    if not result:
+        await notifier.notify_user(user, i18n_key="ntf-sync.users-not-found")
         return
 
-    await notifier.notify_user(user, i18n_key="ntf-common.double-click-confirm")
+    dialog_manager.dialog_data["completed"] = result
+
+    if notification:
+        await notification.delete()
+
+    await dialog_manager.switch_to(state=DashboardImporter.SYNC_PANEL_COMPLETED)
+
+
+@inject
+async def on_sync_from_bot(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    retort: FromDishka[Retort],
+    redis: FromDishka[Redis],
+    notifier: FromDishka[Notifier],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+
+    key = retort.dump(SyncBotRunningKey())
+
+    if await redis.get(key):
+        await notifier.notify_user(user, i18n_key="ntf-sync.already-running")
+        return
+
+    await redis.set(key, value=1, ex=600)
+
+    notification = await notifier.notify_user(
+        user,
+        payload=MessagePayloadDto(i18n_key="ntf-sync.from-bot-started", delete_after=None),
+    )
+
+    try:
+        task = await sync_all_users_from_bot_task.kiq()  # type: ignore[call-overload]
+        result = await task.wait_result()
+        result = result.return_value
+    finally:
+        await redis.delete(key)
+
+    if not result:
+        await notifier.notify_user(user, i18n_key="ntf-sync.users-not-found")
+        return
+
+    dialog_manager.dialog_data["completed"] = result
+
+    if notification:
+        await notification.delete()
+
+    await dialog_manager.switch_to(state=DashboardImporter.SYNC_BOT_COMPLETED)

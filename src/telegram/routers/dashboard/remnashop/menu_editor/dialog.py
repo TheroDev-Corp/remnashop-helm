@@ -1,20 +1,24 @@
+from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import Button, Column, Group, Row, Select, Start, SwitchTo
+from aiogram_dialog.widgets.style import Style
 from magic_filter import F
 
 from src.core.enums import BannerName, ButtonType
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import DashboardRemnashop, RemnashopMenuEditor
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Button, Column, Group, Row, Select, Start, SwitchTo
 
 from .getters import availability_getter, button_getter, menu_editor_getter, type_getter
 from .handlers import (
     on_active_toggle,
     on_availability_select,
     on_button_selected,
+    on_color_select,
     on_confirm,
     on_payload_input,
+    on_subscribers_only_toggle,
     on_text_input,
     on_type_select,
 )
@@ -56,9 +60,19 @@ button = Window(
     I18nFormat("msg-menu-editor-button", button_type=F["type"], role=F["required_role"]),
     Row(
         Button(
-            text=I18nFormat("btn-menu-editor.active", is_active=F["is_active"]),
-            id="toggle_active",
+            text=I18nFormat("btn-menu-editor.active-toggle", is_active=F["is_active"]),
+            id="active_toggle",
             on_click=on_active_toggle,
+        ),
+    ),
+    Row(
+        Button(
+            text=I18nFormat(
+                "btn-menu-editor.subscribers-only-toggle",
+                subscribers_only=F["subscribers_only"],
+            ),
+            id="subscribers_only_toggle",
+            on_click=on_subscribers_only_toggle,
         ),
     ),
     Row(
@@ -83,6 +97,13 @@ button = Window(
             text=I18nFormat("btn-menu-editor.payload"),
             id="payload",
             state=RemnashopMenuEditor.PAYLOAD,
+        ),
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-menu-editor.color"),
+            id="color",
+            state=RemnashopMenuEditor.COLOR,
         ),
     ),
     Row(
@@ -175,7 +196,7 @@ button_type = Window(
 
 button_payload = Window(
     Banner(BannerName.DASHBOARD),
-    I18nFormat("msg-menu-editor-button-payload"),
+    I18nFormat("msg-menu-editor-button-payload", button_type=F["type"]),
     Row(
         SwitchTo(
             text=I18nFormat("btn-back.general"),
@@ -186,6 +207,52 @@ button_payload = Window(
     MessageInput(func=on_payload_input),
     IgnoreUpdate(),
     state=RemnashopMenuEditor.PAYLOAD,
+    getter=button_getter,
+)
+
+button_color = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-menu-editor-button-color"),
+    Row(
+        Button(
+            text=I18nFormat("btn-menu-editor.color-default"),
+            id="color_default",
+            on_click=on_color_select,
+        ),
+    ),
+    Row(
+        Button(
+            text=I18nFormat("btn-menu-editor.color-primary"),
+            id="color_primary",
+            on_click=on_color_select,
+            style=Style(ButtonStyle.PRIMARY),
+        ),
+    ),
+    Row(
+        Button(
+            text=I18nFormat("btn-menu-editor.color-success"),
+            id="color_success",
+            on_click=on_color_select,
+            style=Style(ButtonStyle.SUCCESS),
+        ),
+    ),
+    Row(
+        Button(
+            text=I18nFormat("btn-menu-editor.color-danger"),
+            id="color_danger",
+            on_click=on_color_select,
+            style=Style(ButtonStyle.DANGER),
+        ),
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=RemnashopMenuEditor.BUTTON,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=RemnashopMenuEditor.COLOR,
 )
 
 router = Dialog(
@@ -195,4 +262,5 @@ router = Dialog(
     button_availability,
     button_type,
     button_payload,
+    button_color,
 )
