@@ -33,6 +33,7 @@ from src.application.dto.payment_gateway import (
     CryptoPayGatewaySettingsDto,
     FreeKassaGatewaySettingsDto,
     HeleketGatewaySettingsDto,
+    LavaPayGatewaySettingsDto,
     MulenPayGatewaySettingsDto,
     PayMasterGatewaySettingsDto,
     PaymentGatewayDto,
@@ -105,6 +106,7 @@ class CreateDefaultPaymentGateway(Interactor[None, None]):
                     PaymentGatewayType.URLPAY: UrlPayGatewaySettingsDto,
                     PaymentGatewayType.VALUTIX: ValutixGatewaySettingsDto,
                     PaymentGatewayType.WATA: WataGatewaySettingsDto,
+                    PaymentGatewayType.LAVAPAY: LavaPayGatewaySettingsDto,
                 }
                 dto_class = settings_map.get(gateway_type)
                 settings = dto_class() if dto_class else None
