@@ -36,12 +36,10 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              if [ -z "$(ls -A /opt/remnashop/assets 2>/dev/null)" ]; then
-                echo "Volume is empty. Copying default assets..."
-                cp -a /opt/remnashop/assets.default/. /opt/remnashop/assets/
-              else
-                echo "Volume is not empty. Skipping assets copy."
-              fi
+              echo "Bootstrapping directory structure..."
+              mkdir -p /opt/remnashop/assets/banners/ru
+              mkdir -p /opt/remnashop/assets/translations/ru
+              cp -a /opt/remnashop/assets.default/README.md /opt/remnashop/assets/README.md
           volumeMounts:
             - name: assets-storage
               mountPath: /opt/remnashop/assets
