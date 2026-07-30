@@ -14,6 +14,26 @@ spec:
   storage:
     size: {{ .Values.cnpg.storage.size }}
     storageClass: {{ .Values.cnpg.storage.storageClass }}
+  {{- if .Values.cnpg.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: "s3://{{ .Values.cnpg.backup.bucketName }}/"
+      endpointURL: {{ .Values.cnpg.backup.endpointURL | quote }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ .Values.cnpg.backup.existingSecret }}
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: {{ .Values.cnpg.backup.existingSecret }}
+          key: ACCESS_SECRET_KEY
+        region:
+          name: {{ .Values.cnpg.backup.existingSecret }}
+          key: REGION
+      wal:
+        compression: gzip
+      serverName: {{ .Values.cnpg.backup.serverName | quote }}
+    retentionPolicy: {{ .Values.cnpg.backup.retentionPolicy | quote }}
+{{- end }}
 
   bootstrap:
     initdb:

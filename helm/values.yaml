@@ -82,6 +82,14 @@ cnpg:
   storage:
     size: 5Gi
     storageClass: "local-path"
+  backup:
+    enabled: false
+    bucketName: "remnashop-backups"
+    endpointURL: "https://s3.amazonaws.com"
+    existingSecret: "remnashop-backup-s3-creds"
+    serverName: "remnashop-db"
+    schedule: "0 0 3 * * *"
+    retentionPolicy: "14d"
 
 # Valkey (Кэш и Брокер Taskiq)
 valkey:
