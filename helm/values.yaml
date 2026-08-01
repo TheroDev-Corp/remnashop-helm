@@ -24,7 +24,7 @@ secrets:
   image:
     repository: ghcr.io/therodev-corp/remnashop-helm
     tag: v0.8.2
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   resources:
     limits:
       cpu: 500m
