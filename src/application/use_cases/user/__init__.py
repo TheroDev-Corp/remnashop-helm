@@ -10,6 +10,7 @@ from .commands.blocking import (
     ToggleUserBlockedStatus,
     UnblockAllUsers,
 )
+from .commands.management import DeleteUser, DeleteUserDto
 from .commands.messaging import SendMessageToUser
 from .commands.profile_edit import (
     ChangeUserPoints,
@@ -30,6 +31,7 @@ from .queries.search import SearchUsers, SmartSearch
 USER_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     BlockUsersByIds,
     ClearBlockedIds,
+    DeleteUser,
     GetAdmins,
     GetOrCreateUser,
     SetBotBlockedStatus,

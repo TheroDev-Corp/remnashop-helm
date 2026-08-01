@@ -47,6 +47,7 @@ from src.application.use_cases.subscription.commands.sync import (
     SyncSubscriptionFromRemnawave,
 )
 from src.application.use_cases.user.commands.blocking import ToggleUserBlockedStatus
+from src.application.use_cases.user.commands.management import DeleteUser, DeleteUserDto
 from src.application.use_cases.user.commands.messaging import (
     SendMessageToUser,
     SendMessageToUserDto,
@@ -887,3 +888,19 @@ async def on_subscription_duration_select(
         SetUserSubscriptionDto(target_user_id, plan_id, selected_duration),
     )
     await dialog_manager.switch_to(state=DashboardUser.MAIN)
+
+
+@inject
+async def on_user_delete_confirm(
+    callback: CallbackQuery,
+    button: Button,
+    dialog_manager: DialogManager,
+    delete_user: FromDishka[DeleteUser],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
+    await delete_user(user, DeleteUserDto(user_id=target_user_id))
+    i18n: TranslatorRunner = dialog_manager.middleware_data["i18n"]
+    await callback.answer(i18n.get("ntf-user-deleted-success", default="Пользователь успешно удален"))
+    await on_back_to_list(callback, button, dialog_manager)
+

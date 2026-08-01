@@ -85,6 +85,7 @@ from .handlers import (
     on_transaction_select,
     on_transactions,
     on_trial_toggle,
+    on_user_delete_confirm,
     on_user_select,
 )
 
@@ -173,6 +174,12 @@ user = Window(
             text=I18nFormat("btn-user.block"),
             id="block",
             on_click=on_block_toggle,
+            when=F["is_not_self"] & F["can_edit"],
+        ),
+        SwitchTo(
+            text=I18nFormat("btn-user.delete"),
+            id="delete_user",
+            state=DashboardUser.CONFIRM_DELETE,
             when=F["is_not_self"] & F["can_edit"],
         ),
     ),
@@ -879,6 +886,26 @@ role = Window(
     getter=role_getter,
 )
 
+confirm_delete_user = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-user-confirm-delete"),
+    Row(
+        Button(
+            text=I18nFormat("btn-user.confirm-delete"),
+            id="confirm_delete",
+            on_click=on_user_delete_confirm,
+        ),
+        SwitchTo(
+            text=I18nFormat("btn-common.cancel"),
+            id="cancel_delete",
+            state=DashboardUser.MAIN,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=DashboardUser.CONFIRM_DELETE,
+    getter=user_getter,
+)
+
 router = Dialog(
     user,
     subscription,
@@ -904,4 +931,5 @@ router = Dialog(
     points,
     give_access,
     role,
+    confirm_delete_user,
 )

@@ -98,6 +98,15 @@ class SyncSubscriptionFromRemnawave(Interactor[int, None]):
 
             remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
 
+            if not remna_user and target_user.telegram_id:
+                remna_users = await self.remnawave.get_users_by_telegram_id(
+                    target_user.telegram_id
+                )
+                if remna_users:
+                    remna_user = remna_users[0]
+                    subscription.user_remna_id = remna_user.uuid
+                    await self.subscription_dao.update(subscription)
+
             if not remna_user:
                 await self.subscription_dao.update_status(
                     subscription.id,
