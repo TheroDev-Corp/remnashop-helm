@@ -83,6 +83,26 @@ class RemnawaveImpl(Remnawave):
         plan: Optional[PlanSnapshotDto] = None,
         subscription: Optional[SubscriptionDto] = None,
     ) -> UserResponseDto:
+        if user.telegram_id:
+            try:
+                existing_users = await self.get_users_by_telegram_id(user.telegram_id)
+                if existing_users:
+                    logger.info(
+                        f"RemnaUser for telegram_id '{user.telegram_id}' already exists in panel "
+                        f"(UUID: '{existing_users[0].uuid}'). Updating instead of creating."
+                    )
+                    return await self.update_user(
+                        user=user,
+                        uuid=existing_users[0].uuid,
+                        plan=plan,
+                        subscription=subscription,
+                        reset_traffic=True,
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to check existing RemnaUser for telegram_id '{user.telegram_id}': '{e}'"
+                )
+
         request_dto = self._build_create_request(user, plan, subscription)
 
         try:
