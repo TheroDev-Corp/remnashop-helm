@@ -96,6 +96,7 @@ class PaymentGatewayType(UpperStrEnum):
     ROBOKASSA = auto()
     URLPAY = auto()
     WATA = auto()
+    LAVAPAY = auto()
 
 
 class PurchaseType(UpperStrEnum):
@@ -323,6 +324,7 @@ class Currency(UpperStrEnum):
             PaymentGatewayType.URLPAY: cls.RUB,
             PaymentGatewayType.WATA: cls.RUB,
             PaymentGatewayType.VALUTIX: cls.RUB,
+            PaymentGatewayType.LAVAPAY: cls.RUB,
         }
 
         try:

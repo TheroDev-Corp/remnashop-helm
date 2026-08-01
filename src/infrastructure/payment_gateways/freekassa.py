@@ -98,15 +98,19 @@ class FreeKassaGateway(BasePaymentGateway):
             "shopId": self.data.settings.shop_id,  # type: ignore[union-attr]
             "nonce": time.time_ns(),  # must be strictly increasing
             "paymentId": order_id,
-            "i": self.data.settings.payment_system_id,  # type: ignore[union-attr]
-            "email": self.data.settings.customer_email,  # type: ignore[union-attr]
-            "ip": self.data.settings.customer_ip,  # type: ignore[union-attr]
             "amount": str(amount),
             "currency": self.data.currency.upper(),
             "success_url": await self._get_bot_redirect_url(),
             "failure_url": await self._get_bot_redirect_url(),
             "notification_url": self.config.get_webhook(self.data.type),
         }
+
+        if self.data.settings.payment_system_id is not None:  # type: ignore[union-attr]
+            data["i"] = self.data.settings.payment_system_id  # type: ignore[union-attr]
+        if self.data.settings.customer_email is not None:  # type: ignore[union-attr]
+            data["email"] = self.data.settings.customer_email  # type: ignore[union-attr]
+        if self.data.settings.customer_ip is not None:  # type: ignore[union-attr]
+            data["ip"] = self.data.settings.customer_ip  # type: ignore[union-attr]
 
         # Sort by key and join values with '|'
         sorted_values = "|".join(str(v) for _, v in sorted(data.items()))

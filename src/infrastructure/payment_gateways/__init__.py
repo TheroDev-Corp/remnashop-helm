@@ -3,6 +3,7 @@ from .cryptomus import CryptomusGateway
 from .cryptopay import CryptoPayGateway
 from .freekassa import FreeKassaGateway
 from .heleket import HeleketGateway
+from .lavapay import LavaPayGateway
 from .mulen_pay import MulenPayGateway
 from .pay_master import PayMasterGateway
 from .platega import PlategaGateway
@@ -21,6 +22,7 @@ __all__ = [
     "CryptoPayGateway",
     "FreeKassaGateway",
     "HeleketGateway",
+    "LavaPayGateway",
     "MulenPayGateway",
     "PayMasterGateway",
     "PlategaGateway",
