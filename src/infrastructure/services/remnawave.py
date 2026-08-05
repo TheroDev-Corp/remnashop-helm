@@ -185,9 +185,19 @@ class RemnawaveImpl(Remnawave):
             return None
 
     async def get_users_by_telegram_id(self, telegram_id: int) -> list[UserResponseDto]:
-        response = await self.sdk.users.get_users_by_telegram_id(telegram_id)
-        logger.debug(f"Fetched {len(response.root)} RemnaUsers for telegram_id '{telegram_id}'")
-        return response.root
+        if not self.sdk._client:
+            return []
+        response = await self.sdk._client.get("/users", params={"telegramId": telegram_id})
+        if response.status_code != 200:
+            logger.warning(
+                f"Failed to fetch RemnaUsers for telegram_id '{telegram_id}': status {response.status_code}"
+            )
+            return []
+        data = response.json().get("response", {})
+        users_raw = data.get("users", [])
+        remna_users = [UserResponseDto.model_validate(u) for u in users_raw]
+        logger.debug(f"Fetched {len(remna_users)} RemnaUsers for telegram_id '{telegram_id}'")
+        return remna_users
 
     async def get_all_users(self, limit: int, offset: int) -> list[UserResponseDto]:
         response = await self.sdk.users.get_all_users(start=offset, size=limit)
@@ -195,14 +205,36 @@ class RemnawaveImpl(Remnawave):
         return response.users
 
     async def get_user_by_email(self, email: str) -> list[UserResponseDto]:
-        response = await self.sdk.users.get_users_by_email(email)
-        logger.debug(f"Fetched {len(response.root)} RemnaUsers for email '{email}'")
-        return response.root
+        if not self.sdk._client:
+            return []
+        response = await self.sdk._client.get("/users", params={"email": email})
+        if response.status_code != 200:
+            logger.warning(
+                f"Failed to fetch RemnaUsers for email '{email}': status {response.status_code}"
+            )
+            return []
+        data = response.json().get("response", {})
+        users_raw = data.get("users", [])
+        remna_users = [UserResponseDto.model_validate(u) for u in users_raw]
+        logger.debug(f"Fetched {len(remna_users)} RemnaUsers for email '{email}'")
+        return remna_users
 
     async def get_devices(self, id: int) -> list[HwidDeviceDto]:
-        response = await self.sdk.hwid.get_hwid_user(id)
-        logger.debug(f"Fetched {response.total} devices for RemnaUser '{id}'")
-        return response.devices if response.total else []
+        if not self.sdk._client:
+            return []
+        response = await self.sdk._client.get(f"/hwid/devices/{id}")
+        if response.status_code == 404:
+            return []
+        if response.status_code != 200:
+            logger.warning(
+                f"Failed to fetch devices for RemnaUser '{id}': status {response.status_code}"
+            )
+            return []
+        data = response.json().get("response", {})
+        devices_raw = data.get("devices", [])
+        devices = [HwidDeviceDto.model_validate(d) for d in devices_raw]
+        logger.debug(f"Fetched {len(devices)} devices for RemnaUser '{id}'")
+        return devices
 
     async def delete_device(self, user_id: int, hwid: str) -> Optional[int]:
         try:
