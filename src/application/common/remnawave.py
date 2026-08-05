@@ -1,5 +1,4 @@
 from typing import List, Optional, Protocol, TypeVar, Union
-from uuid import UUID
 
 from packaging.version import Version
 from remnapy.models import UserResponseDto

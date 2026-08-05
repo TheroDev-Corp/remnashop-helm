@@ -41,20 +41,20 @@ class DeleteUser(Interactor[DeleteUserDto, None]):
                 raise PermissionDeniedError("Cannot delete user with equal or higher role")
 
             subscription = await self.subscription_dao.get_current(target_user.id)
-            remna_uuid = None
+            remna_id = None
             if subscription:
-                remna_uuid = subscription.user_remna_id
+                remna_id = subscription.user_remna_id
             elif target_user.telegram_id:
                 remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
                 if remna_users:
-                    remna_uuid = remna_users[0].uuid
+                    remna_id = remna_users[0].id
 
-            if remna_uuid:
+            if remna_id:
                 try:
-                    await self.remnawave.delete_user(remna_uuid)
+                    await self.remnawave.delete_user(remna_id)
                 except Exception as e:
                     logger.warning(
-                        f"Failed to delete RemnaUser '{remna_uuid}' for user '{data.user_id}': {e}"
+                        f"Failed to delete RemnaUser '{remna_id}' for user '{data.user_id}': {e}"
                     )
 
             if subscription:

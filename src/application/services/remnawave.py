@@ -362,11 +362,11 @@ class RemnaWebhookService:
 
     async def _process_delete_subscription(self, remna_user: RemnaUserDto) -> None:
         async with self.uow:
-            subscription = await self.subscription_dao.get_by_remna_id(remna_user.uuid)
+            subscription = await self.subscription_dao.get_by_remna_id(remna_user.id)
 
             if not subscription:
                 logger.warning(
-                    f"Subscription not found for UUID '{remna_user.uuid}', delete aborted"
+                    f"Subscription not found for ID '{remna_user.id}', delete aborted"
                 )
                 return
 

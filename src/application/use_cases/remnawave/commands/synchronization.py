@@ -125,7 +125,7 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
         )
 
         subscription = SubscriptionDto(
-            user_remna_id=remna_subscription.uuid,
+            user_remna_id=remna_subscription.id,
             status=status,
             traffic_limit=plan.traffic_limit,
             device_limit=plan.device_limit,
@@ -185,12 +185,12 @@ class SyncAllUsersFromBot(Interactor[None, dict[str, int]]):
                     skipped += 1
                     continue
 
-                remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
+                remna_user = await self.remnawave.get_user_by_id(subscription.user_remna_id)
 
                 if remna_user:
                     updated_user = await self.remnawave.update_user(
                         user=user,
-                        uuid=subscription.user_remna_id,
+                        id=subscription.user_remna_id,
                         subscription=subscription,
                     )
                     if updated_user.subscription_url != subscription.url:

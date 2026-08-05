@@ -43,7 +43,7 @@ class RemnaSubscriptionDto:
             status=SubscriptionStatus(remna_user.status),
             expire_at=remna_user.expire_at,
             url=remna_user.subscription_url,
-            traffic_limit=bytes_to_gb(remna_user.traffic_limit_bytes),
+            traffic_limit=bytes_to_gb(int(remna_user.traffic_limit_bytes)),
             device_limit=remna_user.hwid_device_limit or 0,
             traffic_limit_strategy=TrafficLimitStrategy(remna_user.traffic_limit_strategy),
             tag=remna_user.tag,
