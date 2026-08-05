@@ -21,11 +21,13 @@ class CheckSubscriptionSyncState(Interactor[int, bool]):
 
     def __init__(
         self,
+        uow: UnitOfWork,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
         remnawave: Remnawave,
         match_subscription: MatchSubscription,
     ) -> None:
+        self.uow = uow
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
@@ -39,11 +41,18 @@ class CheckSubscriptionSyncState(Interactor[int, bool]):
         bot_sub = await self.subscription_dao.get_current(target_user.id)
 
         remna_user = None
-        if bot_sub:
+        if bot_sub and bot_sub.user_remna_id > 0:
             remna_user = await self.remnawave.get_user_by_id(bot_sub.user_remna_id)
-        elif target_user.telegram_id:
+
+        if not remna_user and target_user.telegram_id:
             remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
-            remna_user = remna_users[0] if remna_users else None
+            if remna_users:
+                remna_user = remna_users[0]
+                if bot_sub and bot_sub.user_remna_id != remna_user.id:
+                    bot_sub.user_remna_id = remna_user.id
+                    async with self.uow:
+                        await self.subscription_dao.update(bot_sub)
+                        await self.uow.commit()
 
         remna_sub = RemnaSubscriptionDto.from_remna_user(remna_user) if remna_user else None
 

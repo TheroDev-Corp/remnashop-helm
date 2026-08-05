@@ -176,12 +176,14 @@ class RemnawaveImpl(Remnawave):
         return response.is_deleted
 
     async def get_user_by_id(self, id: int) -> Optional[UserResponseDto]:
+        if not id or id <= 0:
+            return None
         try:
             remna_user = await self.sdk.users.get_user_by_id(id)
             logger.info(f"Fetched RemnaUser '{id}' from panel")
             return remna_user
-        except NotFoundError:
-            logger.debug(f"RemnaUser '{id}' not found in panel")
+        except (NotFoundError, Exception) as e:
+            logger.debug(f"RemnaUser '{id}' not found in panel: {e}")
             return None
 
     async def get_users_by_telegram_id(self, telegram_id: int) -> list[UserResponseDto]:
