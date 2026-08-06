@@ -14,10 +14,10 @@ data:
   
   REMNAWAVE_HOST: {{ .Values.config.remnawaveHost | quote }}
   
-  DATABASE_HOST: {{ include "remnashop.fullname" . }}-db-rw
-  DATABASE_PORT: "5432"
-  DATABASE_NAME: "remnashop"
-  DATABASE_USER: "remnashop"
+  DATABASE_HOST: {{ if .Values.config.databaseHost }}{{ .Values.config.databaseHost | quote }}{{ else }}{{ include "remnashop.fullname" . }}-db-rw{{ end }}
+  DATABASE_PORT: {{ .Values.config.databasePort | quote }}
+  DATABASE_NAME: {{ .Values.config.databaseName | quote }}
+  DATABASE_USER: {{ .Values.config.databaseUser | quote }}
   
   REDIS_HOST: {{ include "remnashop.fullname" . }}-valkey
   REDIS_PORT: "6379"

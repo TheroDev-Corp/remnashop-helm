@@ -51,7 +51,12 @@ spec:
             - name: DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
+                  {{- if .Values.cnpg.enabled }}
                   name: {{ include "remnashop.fullname" . }}-db-app
                   key: password
+                  {{- else }}
+                  name: {{ .Values.secrets.database.existingSecret | default (printf "%s-db-app" (include "remnashop.fullname" .)) }}
+                  key: {{ .Values.secrets.database.secretKey | default "password" }}
+                  {{- end }}
           resources:
             {{- toYaml .Values.scheduler.resources | nindent 12 }}

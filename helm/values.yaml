@@ -6,12 +6,15 @@ config:
   appDomain: "bot.example.com"
   appPort: 5000
   logLevel: "INFO"
-  # URL панели (указываем Ingress панели или внутренний k8s service)
   remnawaveHost: "http://remnaware-panel-backend.remnaware-namespace.svc.cluster.local:3000"
 
+  databaseHost: ""
+  databasePort: "5432"
+  databaseName: "remnashop"
+  databaseUser: "remnashop"
+
 secrets:
-  # Ожидаемые ключи в секрете: APP_CRYPT_KEY, BOT_TOKEN, BOT_SECRET_TOKEN, BOT_OWNER_ID, BOT_SUPPORT_USERNAME, REMNAWAVE_TOKEN, REMNAWAVE_WEBHOOK_SECRET
-  existingSecret: "" 
+  existingSecret: ""
   appCryptKey: "change_me_44_chars_base64_string="
   botToken: "1234567890:AAH_change_me"
   botSecretToken: "super_secret_webhook_token"
@@ -20,7 +23,11 @@ secrets:
   remnawaveToken: "change_me"
   remnawaveWebhookSecret: "change_me"
 
-# Основное приложение (FastAPI + Aiogram Webhook)
+  database:
+    existingSecret: ""
+    secretKey: "password"
+
+  # Основное приложение (FastAPI + Aiogram Webhook)
   image:
     repository: ghcr.io/therodev-corp/remnashop-helm
     tag: v0.8.2
