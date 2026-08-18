@@ -1,4 +1,5 @@
-from typing import cast
+import json
+from typing import Any, cast
 
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
@@ -10,6 +11,7 @@ from remnapy.models.webhook import (
     TorrentBlockerReportDto,
     UserDto,
     UserHwidDeviceEventDto,
+    WebhookPayloadDto,
 )
 
 from src.application.common import EventPublisher
@@ -17,8 +19,48 @@ from src.application.events import ErrorEvent
 from src.application.services import RemnaWebhookService
 from src.core.config import AppConfig
 from src.core.constants import API_V1, REMNAWAVE_WEBHOOK_PATH
+from src.infrastructure.services.remnawave import RemnawaveImpl
 
 router = APIRouter(prefix=API_V1, include_in_schema=False)
+
+
+def _normalize_webhook_payload(payload_dict: dict[str, Any]) -> dict[str, Any]:
+    """Normalizes RemnaWave webhook payload for compatibility with v2/v3 schemas."""
+    event = payload_dict.get("event", "")
+    data = payload_dict.get("data")
+    if not isinstance(data, dict):
+        return payload_dict
+
+    data = dict(data)
+    if event.startswith("user."):
+        data = RemnawaveImpl._normalize_user_dict(data)
+    elif event.startswith("user_hwid_devices."):
+        user = dict(data.get("user", {})) if isinstance(data.get("user"), dict) else {}
+        user = RemnawaveImpl._normalize_user_dict(user)
+        data["user"] = user
+
+        hwid_device = (
+            dict(data.get("hwidUserDevice", {}))
+            if isinstance(data.get("hwidUserDevice"), dict)
+            else {}
+        )
+        if "userUuid" not in hwid_device and "user_uuid" not in hwid_device:
+            user_id = hwid_device.get("userId") or hwid_device.get("user_id") or 0
+            dev_user_uuid = user.get("uuid") or f"00000000-0000-0000-0000-{int(user_id):012d}"
+            hwid_device["userUuid"] = dev_user_uuid
+        data["hwidUserDevice"] = hwid_device
+
+    normalized = dict(payload_dict)
+    if "timestamp" not in normalized or not normalized["timestamp"]:
+        normalized["timestamp"] = (
+            normalized.get("createdAt")
+            or (data.get("createdAt") if isinstance(data, dict) else None)
+            or "2026-01-01T00:00:00Z"
+        )
+    normalized["data"] = data
+    return normalized
+
+
 
 
 async def _process_remnawave_webhook(
@@ -29,20 +71,31 @@ async def _process_remnawave_webhook(
 ) -> Response:
     try:
         raw_body = await request.body()
-        logger.debug(f"Received Remnawave webhook raw body: '{raw_body.decode('utf-8')[:500]}'")
-        payload = WebhookUtility.parse_webhook(
-            body=raw_body.decode("utf-8"),
-            headers=dict(request.headers),
-            webhook_secret=config.remnawave.webhook_secret.get_secret_value(),
-            validate=True,
+        body_str = raw_body.decode("utf-8")
+        logger.debug(f"Received Remnawave webhook raw body: '{body_str[:500]}'")
+
+        secret = config.remnawave.webhook_secret.get_secret_value()
+        is_valid = WebhookUtility.validate_webhook_with_headers(
+            body_str, dict(request.headers), secret
         )
+        if not is_valid:
+            logger.warning("Webhook validation failed: signature mismatch")
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+        raw_dict = json.loads(body_str)
+        normalized_dict = _normalize_webhook_payload(raw_dict)
+        payload = WebhookPayloadDto.from_dict(normalized_dict)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"Webhook validation failed with error '{e}'")
-        raise HTTPException(status_code=401)
+        logger.exception(f"Webhook processing/validation failed with error '{e}'")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     if not payload:
         logger.warning("Payload is empty after validation")
         raise HTTPException(status_code=401, detail="Unauthorized")
+
 
     try:
         if WebhookUtility.is_user_event(payload.event):

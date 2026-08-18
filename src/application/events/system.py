@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from uuid import UUID
 
 from aiogram.utils.formatting import Text
@@ -311,12 +311,13 @@ class UserFirstConnectionEvent(UserEvent):
     )
 
     is_trial: bool
-    subscription_id: UUID
+    subscription_id: Union[UUID, int, str]
     subscription_status: SubscriptionStatus
     traffic_used: Any
     traffic_limit: Any
     device_limit: Any
     expire_time: Any
+
 
     @property
     def event_key(self) -> str:
@@ -518,12 +519,13 @@ class SubscriptionRevokedEvent(UserEvent):
     )
 
     is_trial: bool
-    subscription_id: UUID
+    subscription_id: Union[UUID, int, str]
     subscription_status: SubscriptionStatus
     traffic_used: Any
     traffic_limit: Any
     device_limit: Any
     expire_time: Any
+
 
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(

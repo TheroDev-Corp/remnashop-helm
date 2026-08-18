@@ -47,3 +47,4 @@ site/
 *.egg-info/
 *.egg
 frontend/
+api-v3.json

@@ -42,15 +42,24 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
 
     async def _execute(self, actor: UserDto, data: SyncRemnaUserDto) -> bool:
         remna_user = data.remna_user
+        user_identifier = getattr(remna_user, "uuid", None) or getattr(remna_user, "id", "unknown")
 
         async with self.uow:
-            user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+            user = None
+            remna_id = getattr(remna_user, "id", None)
+            if remna_id:
+                user = await self.user_dao.get_by_remna_id(remna_id)
+            if not user and getattr(remna_user, "uuid", None):
+                try:
+                    user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+                except Exception:
+                    pass
 
             if not user and remna_user.telegram_id:
                 user = await self.user_dao.get_by_telegram_id(remna_user.telegram_id)
 
             if not user and data.creating:
-                logger.debug(f"User '{remna_user.uuid}' not found in bot, creating new user")
+                logger.debug(f"User '{user_identifier}' not found in bot, creating new user")
 
                 async def persist(referral_code: str) -> UserDto:
                     return await self.user_dao.create(
@@ -67,7 +76,7 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
 
             if not user:
                 logger.warning(
-                    f"Sync failed: user '{remna_user.uuid}' could not be found or created"
+                    f"Sync failed: user '{user_identifier}' could not be found or created"
                 )
                 return False
 
@@ -80,23 +89,28 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
                 )
                 await self._import_subscription(user.id, remna_subscription)
                 await self.uow.commit()
-                logger.info(f"Sync completed for user '{remna_user.telegram_id}'")
+                target_id = remna_user.telegram_id or user_identifier
+                logger.info(f"Sync completed for user '{target_id}'")
                 return False
             else:
                 logger.info(f"Synchronizing existing subscription for user {user.log}")
                 changed = await self._update_subscription(subscription, remna_subscription)
                 await self.uow.commit()
-                logger.info(f"Sync completed for user '{remna_user.telegram_id}'")
+                target_id = remna_user.telegram_id or user_identifier
+                logger.info(f"Sync completed for user '{target_id}'")
                 return changed
 
+
     def _create_user_dto(self, data: RemnaUserDto, referral_code: str) -> UserDto:
+        fallback_name = str(getattr(data, "uuid", None) or getattr(data, "id", "user"))
         return UserDto(
             telegram_id=data.telegram_id,
             referral_code=referral_code,
-            name=str(data.telegram_id) if data.telegram_id else str(data.uuid),
+            name=str(data.telegram_id) if data.telegram_id else fallback_name,
             role=Role.USER,
             language=self.config.default_locale,
         )
+
 
     async def _import_subscription(
         self,
@@ -270,11 +284,23 @@ class SyncAllUsersFromPanel(Interactor[None, dict[str, int]]):
         errors = 0
 
         for remna_user in panel_users:
+            user_identifier = (
+                getattr(remna_user, "uuid", None) or getattr(remna_user, "id", "unknown")
+            )
             try:
+
                 if remna_user.telegram_id:
                     user = bot_users_map.get(remna_user.telegram_id)
                 else:
-                    user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+                    user = None
+                    remna_id = getattr(remna_user, "id", None)
+                    if remna_id:
+                        user = await self.user_dao.get_by_remna_id(remna_id)
+                    if not user and getattr(remna_user, "uuid", None):
+                        try:
+                            user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+                        except Exception:
+                            pass
 
                 if not user:
                     await self.sync_remna_user.system(SyncRemnaUserDto(remna_user, True))
@@ -293,9 +319,10 @@ class SyncAllUsersFromPanel(Interactor[None, dict[str, int]]):
 
             except Exception as exception:
                 logger.exception(
-                    f"Error syncing RemnaUser '{remna_user.uuid}' exception: {exception}"
+                    f"Error syncing RemnaUser '{user_identifier}' exception: {exception}"
                 )
                 errors += 1
+
 
         result = {
             "total_panel_users": len(panel_users),

@@ -63,6 +63,21 @@ class UserDaoImpl(UserDao):
         logger.debug(f"User '{telegram_id}' not found")
         return None
 
+    async def get_by_remna_id(self, remna_id: int) -> Optional[UserDto]:
+        stmt = (
+            select(User)
+            .join(Subscription, User.current_subscription_id == Subscription.id)
+            .where(Subscription.user_remna_id == remna_id)
+        )
+        db_user = await self.session.scalar(stmt)
+
+        if db_user:
+            logger.debug(f"User with remna_id '{remna_id}' found in database")
+            return self._convert_to_dto(db_user)
+
+        logger.debug(f"User with remna_id '{remna_id}' not found")
+        return None
+
     async def get_by_remna_uuid(self, remna_uuid: UUID) -> Optional[UserDto]:
         stmt = (
             select(User)
@@ -77,6 +92,7 @@ class UserDaoImpl(UserDao):
 
         logger.debug(f"User with remna_uuid '{remna_uuid}' not found")
         return None
+
 
     async def get_by_email(self, email: str) -> Optional[UserDto]:
         stmt = select(User).where(User.email == email)
