@@ -3,8 +3,8 @@
 .vscode/
 .code-workspace
 data/*
-tests
 .DS_Store
+
 traefik
 logs/*
 !logs/.gitkeep
