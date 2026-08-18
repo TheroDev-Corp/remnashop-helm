@@ -27,11 +27,13 @@ secrets:
     existingSecret: ""
     secretKey: "password"
 
-  # Основное приложение (FastAPI + Aiogram Webhook)
+# Основное приложение (FastAPI + Aiogram Webhook)
+app:
   image:
     repository: ghcr.io/therodev-corp/remnashop-helm
-    tag: v0.8.2
+    tag: v0.9.0
     pullPolicy: IfNotPresent
+
   resources:
     limits:
       cpu: 500m
@@ -39,6 +41,7 @@ secrets:
     requests:
       cpu: 100m
       memory: 256Mi
+
 
 # Taskiq Worker (Фоновые задачи)
 worker:
