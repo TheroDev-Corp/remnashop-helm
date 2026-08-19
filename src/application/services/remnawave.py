@@ -116,6 +116,7 @@ class RemnaWebhookService:
             RemnaUserEvent.DISABLED,
             RemnaUserEvent.LIMITED,
             RemnaUserEvent.EXPIRED,
+            RemnaUserEvent.TRAFFIC_RESET,
         }:
             await self._process_status(user, current_subscription, event, remna_user)
 
@@ -132,6 +133,7 @@ class RemnaWebhookService:
             RemnaUserEvent.EXPIRES_IN_72_HOURS,
             RemnaUserEvent.EXPIRES_IN_48_HOURS,
             RemnaUserEvent.EXPIRES_IN_24_HOURS,
+            RemnaUserEvent.EXPIRATION,
         }:
             await self._process_expiring(user, current_subscription, event, remna_user)
 
@@ -281,9 +283,16 @@ class RemnaWebhookService:
             RemnaUserEvent.EXPIRES_IN_48_HOURS: 2,
             RemnaUserEvent.EXPIRES_IN_24_HOURS: 1,
         }
+        day = expire_map.get(event)
+        if day is None and remna_user.expire_at:
+            delta = remna_user.expire_at - datetime_now()
+            day = max(1, min(3, round(delta.total_seconds() / 86400)))
+        if day is None:
+            day = 1
+
         await self.event_bus.publish(
             SubscriptionExpiresEvent(
-                day=expire_map[event],
+                day=day,
                 user=user,
                 is_trial=current_subscription.is_trial,
             )
@@ -499,6 +508,7 @@ class RemnaUserEvent(StrEnum):
     EXPIRES_IN_72_HOURS = "user.expires_in_72_hours"
     EXPIRES_IN_48_HOURS = "user.expires_in_48_hours"
     EXPIRES_IN_24_HOURS = "user.expires_in_24_hours"
+    EXPIRATION = "user.expiration"
     EXPIRED_24_HOURS_AGO = "user.expired_24_hours_ago"
 
 

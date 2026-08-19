@@ -213,3 +213,65 @@ async def test_get_user_by_id_v3(remnawave_service, mock_sdk):
     user = await remnawave_service.get_user_by_id(id=100)
     assert user is not None
     assert user.id == 100
+    mock_sdk._client.get.assert_awaited_with("/users/100")
+
+
+@pytest.mark.asyncio
+async def test_get_user_by_id_v2_success(remnawave_service, mock_sdk):
+    remnawave_service._panel_version = Version("2.8.1")
+
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.json.return_value = {
+        "response": {
+            "id": 147,
+            "username": "user147",
+            "status": "ACTIVE",
+            "expireAt": "2026-12-31T23:59:59Z",
+        }
+    }
+    mock_sdk._client.get = AsyncMock(return_value=fake_response)
+
+    user = await remnawave_service.get_user_by_id(id=147)
+    assert user is not None
+    assert user.id == 147
+    mock_sdk._client.get.assert_awaited_with("/users/by-id/147")
+
+
+@pytest.mark.asyncio
+async def test_get_user_by_id_v2_not_found_with_html_magi_error(remnawave_service, mock_sdk):
+    remnawave_service._panel_version = Version("2.8.1")
+
+    fake_response = MagicMock()
+    fake_response.status_code = 404
+    fake_response.text = "<script>window.__MAGI_CODE__='404';</script>"
+    mock_sdk._client.get = AsyncMock(return_value=fake_response)
+
+    user = await remnawave_service.get_user_by_id(id=999)
+    assert user is None
+
+
+@pytest.mark.asyncio
+async def test_get_users_by_telegram_id_v2_success(remnawave_service, mock_sdk):
+    remnawave_service._panel_version = Version("2.8.1")
+
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.json.return_value = {
+        "response": [
+            {
+                "id": 147,
+                "username": "user147",
+                "telegramId": 628126350,
+                "status": "ACTIVE",
+                "expireAt": "2026-12-31T23:59:59Z",
+            }
+        ]
+    }
+    mock_sdk._client.get = AsyncMock(return_value=fake_response)
+
+    users = await remnawave_service.get_users_by_telegram_id(telegram_id=628126350)
+    assert len(users) == 1
+    assert users[0].id == 147
+    assert users[0].telegram_id == 628126350
+

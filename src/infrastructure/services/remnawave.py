@@ -8,11 +8,13 @@ from loguru import logger
 from packaging.version import Version
 from remnapy import RemnawaveSDK
 from remnapy.exceptions import (
+    ApiError,
     ApiErrorResponse,
     AuthenticationError,
     ConflictError,
     NotFoundError,
 )
+
 from remnapy.models import (
     CreateUserRequestDto,
     DeleteUserAllHwidDeviceRequestDto,
@@ -253,18 +255,40 @@ class RemnawaveImpl(Remnawave):
                 await self.reset_traffic(id)
             return remna_user
 
-        request_dto = self._build_update_request(user, id, plan, subscription)
+        uuid = getattr(user, "remna_uuid", None)
+        username = user.remna_name
+        if not uuid and id and id > 0:
+            existing = await self.get_user_by_id(id)
+            if existing:
+                uuid = existing.uuid
+                username = existing.username
+
+        request_dto = self._build_update_request(
+            user=user,
+            id=id,
+            plan=plan,
+            subscription=subscription,
+            uuid=uuid,
+            username=username,
+        )
         try:
             remna_user = await self.sdk.users.update_user(request_dto)
             logger.info(
                 f"RemnaUser '{remna_user.username}' updated successfully. "
                 f"ID: '{remna_user.id}', telegram_id: '{remna_user.telegram_id}'"
             )
-        except NotFoundError:
+        except (NotFoundError, ApiError) as e:
             logger.warning(
-                f"RemnaUser '{request_dto.username}' with ID '{id}' not found"
+                f"RemnaUser '{request_dto.username}' with ID '{id}' not found: {e}"
             )
-            raise
+            raise NotFoundError(
+                status_code=404,
+                error=ApiErrorResponse(
+                    message=f"User {id} not found",
+                    code="USER_NOT_FOUND",
+                ),
+            )
+
 
         if reset_traffic:
             await self.reset_traffic(id)
@@ -354,19 +378,18 @@ class RemnawaveImpl(Remnawave):
 
         if self.sdk._client:
             try:
-                # In v3 it is GET /users/{id}
-                response = await self.sdk._client.get(f"/users/{id}")
+                path = f"/users/{id}" if self.is_v3 else f"/users/by-id/{id}"
+                response = await self.sdk._client.get(path)
                 if response.status_code == 200:
                     remna_user = self._parse_user_response(response.json())
                     logger.info(f"Fetched RemnaUser '{id}' from panel")
                     return remna_user
-                if response.status_code == 404:
-                    # Fallback to /users/by-id/{id} for older v2 panels
-                    legacy_response = await self.sdk._client.get(f"/users/by-id/{id}")
-                    if legacy_response.status_code == 200:
-                        remna_user = self._parse_user_response(legacy_response.json())
-                        logger.info(f"Fetched RemnaUser '{id}' from panel (legacy)")
-                        return remna_user
+                if response.status_code in {400, 404}:
+                    if self.is_v3:
+                        legacy = await self.sdk._client.get(f"/users/by-id/{id}")
+                        if legacy.status_code == 200:
+                            return self._parse_user_response(legacy.json())
+                    return None
             except Exception as e:
                 logger.debug(f"Error fetching RemnaUser '{id}': {e}")
 
@@ -374,7 +397,7 @@ class RemnawaveImpl(Remnawave):
             remna_user = await self.sdk.users.get_user_by_id(id)
             logger.info(f"Fetched RemnaUser '{id}' from panel via SDK")
             return remna_user
-        except (NotFoundError, Exception) as e:
+        except (NotFoundError, ApiError, Exception) as e:
             logger.debug(f"RemnaUser '{id}' not found in panel: {e}")
             return None
 
@@ -382,30 +405,40 @@ class RemnawaveImpl(Remnawave):
         if not self.sdk._client:
             return []
 
-        # Try v3 filters parameter first if is_v3
         if self.is_v3:
-            filters_param = json.dumps([{"id": "telegramId", "value": telegram_id}])
-            response = await self.sdk._client.get("/users", params={"filters": filters_param})
+            try:
+                filters_param = json.dumps([{"id": "telegramId", "value": telegram_id}])
+                response = await self.sdk._client.get("/users", params={"filters": filters_param})
+                if response.status_code == 200:
+                    remna_users = self._parse_users_list(response.json())
+                    if remna_users:
+                        logger.debug(
+                            f"Fetched {len(remna_users)} RemnaUsers for telegram_id "
+                            f"'{telegram_id}' (v3 filter)"
+                        )
+                        return remna_users
+            except Exception as e:
+                logger.debug(f"Error querying v3 users for telegram_id '{telegram_id}': {e}")
+
+        try:
+            response = await self.sdk._client.get(f"/users/by-telegram-id/{telegram_id}")
             if response.status_code == 200:
                 remna_users = self._parse_users_list(response.json())
-                if remna_users:
-                    logger.debug(
-                        f"Fetched {len(remna_users)} RemnaUsers for telegram_id "
-                        f"'{telegram_id}' (v3 filter)"
-                    )
-                    return remna_users
+                logger.debug(
+                    f"Fetched {len(remna_users)} RemnaUsers for telegram_id '{telegram_id}'"
+                )
+                return remna_users
+        except Exception as e:
+            logger.debug(f"Error querying users/by-telegram-id for '{telegram_id}': {e}")
 
-        # Fallback to query parameter telegramId (v2 and direct param support)
-        response = await self.sdk._client.get("/users", params={"telegramId": telegram_id})
-        if response.status_code == 200:
-            remna_users = self._parse_users_list(response.json())
-            logger.debug(f"Fetched {len(remna_users)} RemnaUsers for telegram_id '{telegram_id}'")
-            return remna_users
+        try:
+            response = await self.sdk._client.get("/users", params={"telegramId": telegram_id})
+            if response.status_code == 200:
+                remna_users = self._parse_users_list(response.json())
+                return remna_users
+        except Exception:
+            pass
 
-        logger.warning(
-            f"Failed to fetch RemnaUsers for telegram_id '{telegram_id}': "
-            f"status {response.status_code}"
-        )
         return []
 
     async def get_all_users(self, limit: int, offset: int) -> list[UserResponseDto]:
@@ -429,27 +462,30 @@ class RemnawaveImpl(Remnawave):
             return []
 
         if self.is_v3:
-            filters_param = json.dumps([{"id": "email", "value": email}])
-            response = await self.sdk._client.get("/users", params={"filters": filters_param})
+            try:
+                filters_param = json.dumps([{"id": "email", "value": email}])
+                response = await self.sdk._client.get("/users", params={"filters": filters_param})
+                if response.status_code == 200:
+                    remna_users = self._parse_users_list(response.json())
+                    if remna_users:
+                        logger.debug(
+                            f"Fetched {len(remna_users)} RemnaUsers for email '{email}' (v3 filter)"
+                        )
+                        return remna_users
+            except Exception:
+                pass
+
+        try:
+            response = await self.sdk._client.get(f"/users/by-email/{email}")
             if response.status_code == 200:
                 remna_users = self._parse_users_list(response.json())
-                if remna_users:
-                    logger.debug(
-                        f"Fetched {len(remna_users)} RemnaUsers for email '{email}' (v3 filter)"
-                    )
-                    return remna_users
+                logger.debug(f"Fetched {len(remna_users)} RemnaUsers for email '{email}'")
+                return remna_users
+        except Exception:
+            pass
 
-        response = await self.sdk._client.get("/users", params={"email": email})
-        if response.status_code == 200:
-            remna_users = self._parse_users_list(response.json())
-            logger.debug(f"Fetched {len(remna_users)} RemnaUsers for email '{email}'")
-            return remna_users
-
-
-        logger.warning(
-            f"Failed to fetch RemnaUsers for email '{email}': status {response.status_code}"
-        )
         return []
+
 
     async def get_devices(self, id: int) -> list[HwidDeviceDto]:
         if not self.sdk._client:
@@ -811,9 +847,15 @@ class RemnawaveImpl(Remnawave):
         id: int,
         plan: Optional[PlanSnapshotDto],
         subscription: Optional[SubscriptionDto],
+        uuid: Optional[Any] = None,
+        username: Optional[str] = None,
     ) -> UpdateUserRequestDto:
+        effective_uuid = uuid or getattr(user, "remna_uuid", None)
+        effective_username = username or user.remna_name
         if subscription:
             return UpdateUserRequestDto(
+                uuid=effective_uuid,
+                username=effective_username if not effective_uuid else None,
                 telegram_id=user.telegram_id,
                 expire_at=subscription.expire_at,
                 status=(
@@ -833,6 +875,8 @@ class RemnawaveImpl(Remnawave):
 
         if plan:
             return UpdateUserRequestDto(
+                uuid=effective_uuid,
+                username=effective_username if not effective_uuid else None,
                 telegram_id=user.telegram_id,
                 expire_at=days_to_datetime(plan.duration),
                 status=SubscriptionStatus.ACTIVE,
@@ -847,3 +891,5 @@ class RemnawaveImpl(Remnawave):
             )
 
         raise ValueError("Either 'plan' or 'subscription' must be provided")
+
+
