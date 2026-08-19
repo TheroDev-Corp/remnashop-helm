@@ -75,7 +75,8 @@ class YoomoneyGateway(BasePaymentGateway):
         operation_id = webhook_data.get("operation_id")
 
         if operation_id == "test-notification":
-            raise ValueError("Test webhook cannot be processed")
+            logger.info("Received YooMoney test webhook notification, ignoring successfully")
+            return None
 
         if not self._verify_webhook(webhook_data):
             raise PermissionError("YooMoney webhook verification failed")

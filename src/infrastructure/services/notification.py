@@ -417,6 +417,13 @@ class NotificationService(Notifier):
         except TelegramForbiddenError:
             logger.warning(f"Bot was blocked by user {user.log}")
             return None
+        except (TelegramNotFound, TelegramBadRequest) as e:
+            msg_lower = str(e).lower()
+            if any(k in msg_lower for k in ("chat not found", "user not found", "chat_not_found", "bot was blocked")):
+                logger.warning(f"Cannot send notification to user {user.log}: {e}")
+                return None
+            logger.exception(f"Failed to send notification to {user.log}: {e}")
+            raise
         except Exception as e:
             logger.exception(f"Failed to send notification to {user.log}: {e}")
             raise
