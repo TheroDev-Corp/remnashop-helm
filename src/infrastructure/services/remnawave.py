@@ -3,6 +3,7 @@ import json
 from dataclasses import fields, is_dataclass
 from datetime import timedelta
 from typing import Any, Optional, Union
+from uuid import UUID
 
 from loguru import logger
 from packaging.version import Version
@@ -487,30 +488,52 @@ class RemnawaveImpl(Remnawave):
         return []
 
 
-    async def get_devices(self, id: int) -> list[HwidDeviceDto]:
+    async def get_devices(self, id: Union[int, UUID, str]) -> list[HwidDeviceDto]:
         if not self.sdk._client:
             return []
-        response = await self.sdk._client.get(f"/hwid/devices/{id}")
-        if response.status_code == 404:
-            return []
-        if response.status_code != 200:
-            logger.warning(
-                f"Failed to fetch devices for RemnaUser '{id}': status {response.status_code}"
-            )
-            return []
-        data = response.json().get("response", {})
-        devices_raw = data.get("devices", [])
-        devices = [HwidDeviceDto.model_validate(d) for d in devices_raw]
-        logger.debug(f"Fetched {len(devices)} devices for RemnaUser '{id}'")
-        return devices
 
-    async def delete_device(self, user_id: int, hwid: str) -> Optional[int]:
-        if self.is_v3 and self.sdk._client:
-            response = await self.sdk._client.post(
-                "/hwid/devices/delete",
-                json={"userId": user_id, "hwid": hwid},
-            )
-            if response.status_code == 404:
+        target_param = str(id)
+        if not self.is_v3 and str(id).isdigit():
+            user = await self.get_user_by_id(int(id))
+            if user and user.uuid:
+                target_param = str(user.uuid)
+
+        if self.is_v3 and not str(id).isdigit():
+            user = await self.get_user_by_id(id)
+            if user and user.id:
+                target_param = str(user.id)
+
+        try:
+            response = await self.sdk._client.get(f"/hwid/devices/{target_param}")
+            if response.status_code in {400, 404}:
+                return []
+            if response.status_code != 200:
+                logger.warning(
+                    f"Failed to fetch devices for RemnaUser '{id}': status {response.status_code}"
+                )
+                return []
+            data = response.json().get("response", {})
+            devices_raw = data.get("devices", [])
+            devices = [HwidDeviceDto.model_validate(d) for d in devices_raw]
+            logger.debug(f"Fetched {len(devices)} devices for RemnaUser '{id}'")
+            return devices
+        except Exception as e:
+            logger.warning(f"Error fetching devices for RemnaUser '{id}': {e}")
+            return []
+
+    async def delete_device(self, user_id: Union[int, UUID, str], hwid: str) -> Optional[int]:
+        if not self.sdk._client:
+            return None
+
+        if self.is_v3:
+            payload: dict[str, Any] = {"hwid": hwid}
+            if str(user_id).isdigit():
+                payload["userId"] = int(user_id)
+            else:
+                user = await self.get_user_by_id(user_id)
+                payload["userId"] = user.id if user else user_id
+            response = await self.sdk._client.post("/hwid/devices/delete", json=payload)
+            if response.status_code in {400, 404}:
                 logger.debug(f"RemnaUser '{user_id}' not found in panel")
                 return None
             if response.status_code in {200, 201}:
@@ -521,43 +544,59 @@ class RemnawaveImpl(Remnawave):
                     f"Total devices now: {total}"
                 )
                 return total
-
-        try:
-            res = await self.sdk.hwid.delete_hwid_to_user(
-                DeleteUserHwidDeviceRequestDto(user_uuid=user_id, hwid=hwid)
-            )
-            logger.info(
-                f"Deleted HWID device '{hwid}' for RemnaUser '{user_id}'. "
-                f"Total devices now: {res.total}"
-            )
-            return int(res.total)
-        except NotFoundError:
-            logger.debug(f"RemnaUser '{user_id}' not found in panel")
             return None
 
-    async def delete_all_devices(self, user_id: int) -> None:
-        if self.is_v3 and self.sdk._client:
-            response = await self.sdk._client.post(
-                "/hwid/devices/delete-all",
-                json={"userId": user_id},
-            )
-            if response.status_code == 404:
-                logger.debug(f"RemnaUser '{user_id}' not found in panel")
-                return
-            if response.status_code in {200, 201}:
-                data = response.json().get("response", {})
-                total = data.get("total", 0)
-                logger.info(f"Deleted all HWID devices ({total}) for RemnaUser '{user_id}' (v3)")
-                return
+        payload = {"hwid": hwid}
+        if not str(user_id).isdigit():
+            payload["userUuid"] = str(user_id)
+        else:
+            user = await self.get_user_by_id(int(user_id))
+            payload["userUuid"] = str(user.uuid) if user and user.uuid else str(user_id)
 
         try:
-            result = await self.sdk.hwid.delete_all_hwid_user(
-                DeleteUserAllHwidDeviceRequestDto(user_uuid=user_id)
-            )
-            logger.info(f"Deleted all HWID devices ({result.total}) for RemnaUser '{user_id}'")
-        except NotFoundError:
-            logger.debug(f"RemnaUser '{user_id}' not found in panel")
+            response = await self.sdk._client.post("/hwid/devices/delete", json=payload)
+            if response.status_code in {400, 404}:
+                logger.debug(f"RemnaUser '{user_id}' not found in panel")
+                return None
+            if response.status_code in {200, 201}:
+                data = response.json().get("response", {})
+                total = int(data.get("total", 0))
+                logger.info(
+                    f"Deleted HWID device '{hwid}' for RemnaUser '{user_id}'. "
+                    f"Total devices now: {total}"
+                )
+                return total
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to delete HWID device '{hwid}' for RemnaUser '{user_id}': {e}")
+            return None
+
+    async def delete_all_devices(self, user_id: Union[int, UUID, str]) -> None:
+        if not self.sdk._client:
             return
+
+        if self.is_v3:
+            payload: dict[str, Any] = {}
+            if str(user_id).isdigit():
+                payload["userId"] = int(user_id)
+            else:
+                user = await self.get_user_by_id(user_id)
+                payload["userId"] = user.id if user else user_id
+            await self.sdk._client.post("/hwid/devices/delete-all", json=payload)
+            return
+
+        payload = {}
+        if not str(user_id).isdigit():
+            payload["userUuid"] = str(user_id)
+        else:
+            user = await self.get_user_by_id(int(user_id))
+            payload["userUuid"] = str(user.uuid) if user and user.uuid else str(user_id)
+
+        try:
+            await self.sdk._client.post("/hwid/devices/delete-all", json=payload)
+            logger.info(f"Deleted all HWID devices for RemnaUser '{user_id}'")
+        except Exception as e:
+            logger.warning(f"Failed to delete all HWID devices for RemnaUser '{user_id}': {e}")
 
     async def drop_connections(self, user_id: int) -> None:
         if self.is_v3 and self.sdk._client:
