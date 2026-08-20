@@ -378,21 +378,39 @@ class RemnawaveImpl(Remnawave):
             return None
 
         if self.sdk._client:
-            try:
-                path = f"/users/{id}" if self.is_v3 else f"/users/by-id/{id}"
-                response = await self.sdk._client.get(path)
-                if response.status_code == 200:
-                    remna_user = self._parse_user_response(response.json())
-                    logger.info(f"Fetched RemnaUser '{id}' from panel")
-                    return remna_user
-                if response.status_code in {400, 404}:
-                    if self.is_v3:
+            if self.is_v3:
+                try:
+                    path = f"/users/{id}"
+                    response = await self.sdk._client.get(path)
+                    if response.status_code == 200:
+                        remna_user = self._parse_user_response(response.json())
+                        logger.info(f"Fetched RemnaUser '{id}' from panel")
+                        return remna_user
+                    if response.status_code in {400, 404}:
                         legacy = await self.sdk._client.get(f"/users/by-id/{id}")
                         if legacy.status_code == 200:
                             return self._parse_user_response(legacy.json())
-                    return None
-            except Exception as e:
-                logger.debug(f"Error fetching RemnaUser '{id}': {e}")
+                except Exception as e:
+                    logger.debug(f"Error fetching RemnaUser '{id}': {e}")
+            else:
+                try:
+                    response = await self.sdk._client.get(f"/users/by-id/{id}")
+                    if response.status_code == 200:
+                        remna_user = self._parse_user_response(response.json())
+                        logger.info(f"Fetched RemnaUser '{id}' from panel")
+                        return remna_user
+                except Exception:
+                    pass
+
+                try:
+                    users_res = await self.sdk._client.get("/users", params={"size": 200})
+                    if users_res.status_code == 200:
+                        for u_dto in self._parse_users_list(users_res.json()):
+                            if u_dto.id == id:
+                                logger.info(f"Fetched RemnaUser '{id}' from panel via 2.8.x list")
+                                return u_dto
+                except Exception as e:
+                    logger.debug(f"2.8.x lookup for user id '{id}' failed: {e}")
 
         try:
             remna_user = await self.sdk.users.get_user_by_id(id)
@@ -420,6 +438,15 @@ class RemnawaveImpl(Remnawave):
                         return remna_users
             except Exception as e:
                 logger.debug(f"Error querying v3 users for telegram_id '{telegram_id}': {e}")
+
+        try:
+            response = await self.sdk._client.get(f"/users/by-username/rs_{telegram_id}")
+            if response.status_code == 200:
+                user = self._parse_user_response(response.json())
+                if user:
+                    return [user]
+        except Exception:
+            pass
 
         try:
             response = await self.sdk._client.get(f"/users/by-telegram-id/{telegram_id}")
