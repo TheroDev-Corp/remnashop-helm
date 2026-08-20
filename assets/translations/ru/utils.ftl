@@ -92,7 +92,11 @@ frg-user-details =
     <blockquote>
     { $telegram_id ->
         [0] • <b>Почта</b>: <code>{ $email }</code>
-        *[HAS] • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+        *[HAS] • <b>TG ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+    }
+    { $subscription_id ->
+        [0] • <b>ID в боте</b>: <code>{ $db_id }</code>
+        *[HAS] • <b>ID в боте</b>: <code>{ $db_id }</code> / <b>В панели</b>: <code>{ $subscription_id }</code>
     }
     • <b>Имя</b>: { $name } { $username ->
         [0] { space }
@@ -127,7 +131,10 @@ frg-subscription-user-editor =
 
 frg-subscription-details =
     <blockquote>
-    • <b>ID</b>: <code>{ $subscription_id }</code>
+    { $shop_user_id ->
+        [0] • <b>ID в панели</b>: <code>{ $subscription_id }</code>
+        *[HAS] • <b>ID в боте</b>: <code>{ $shop_user_id }</code> / <b>В панели</b>: <code>{ $subscription_id }</code>
+    }
     • <b>Статус</b>: { subscription-status }
     • <b>Трафик</b>: { $traffic_used } / { $traffic_limit }
     • <b>Лимит устройств</b>: { $device_limit }

@@ -72,7 +72,9 @@ async def user_getter(
 
     data: dict[str, Any] = {
         "from_referral_user_id": from_referral_user_id,
+        "db_id": profile.target_user.id,
         "telegram_id": profile.target_user.telegram_id,
+        "subscription_id": profile.subscription.user_remna_id if profile.subscription else False,
         "email": profile.target_user.email,
         "username": profile.target_user.username or False,
         "name": profile.target_user.name,
@@ -129,6 +131,7 @@ async def subscription_getter(
         "has_traffic_limit": subscription.has_traffic_limit,
         "url": remna_user.subscription_url,
         #
+        "shop_user_id": target_user_id,
         "subscription_id": subscription.user_remna_id,
         "subscription_status": subscription.current_status,
         "traffic_used": i18n_format_bytes_to_unit(
