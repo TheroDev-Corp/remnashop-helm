@@ -901,6 +901,7 @@ async def on_user_delete_confirm(
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
     await delete_user(user, DeleteUserDto(user_id=target_user_id))
-    await callback.answer(i18n.get("ntf-user-deleted-success", default="Пользователь успешно удален"))
+    await callback.answer(
+        i18n.get("ntf-user-deleted-success", default="Пользователь успешно удален")
+    )
     await on_back_to_list(callback, button, dialog_manager)
-

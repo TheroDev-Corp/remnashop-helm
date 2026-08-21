@@ -43,7 +43,12 @@ class CheckSubscriptionSyncState(Interactor[int, bool]):
         remna_user = None
         if bot_sub and bot_sub.user_remna_id > 0:
             remna_user = await self.remnawave.get_user_by_id(bot_sub.user_remna_id)
-            if remna_user and target_user.telegram_id and remna_user.telegram_id and remna_user.telegram_id != target_user.telegram_id:
+            if (
+                remna_user
+                and target_user.telegram_id
+                and remna_user.telegram_id
+                and remna_user.telegram_id != target_user.telegram_id
+            ):
                 remna_user = None
 
         if not remna_user and target_user.telegram_id:
@@ -108,13 +113,16 @@ class SyncSubscriptionFromRemnawave(Interactor[int, None]):
                 return
 
             remna_user = await self.remnawave.get_user_by_id(subscription.user_remna_id)
-            if remna_user and target_user.telegram_id and remna_user.telegram_id and remna_user.telegram_id != target_user.telegram_id:
+            if (
+                remna_user
+                and target_user.telegram_id
+                and remna_user.telegram_id
+                and remna_user.telegram_id != target_user.telegram_id
+            ):
                 remna_user = None
 
             if not remna_user and target_user.telegram_id:
-                remna_users = await self.remnawave.get_users_by_telegram_id(
-                    target_user.telegram_id
-                )
+                remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
                 if remna_users:
                     remna_user = remna_users[0]
                     subscription.user_remna_id = remna_user.id

@@ -100,7 +100,6 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
                 logger.info(f"Sync completed for user '{target_id}'")
                 return changed
 
-
     def _create_user_dto(self, data: RemnaUserDto, referral_code: str) -> UserDto:
         fallback_name = str(getattr(data, "uuid", None) or getattr(data, "id", "user"))
         return UserDto(
@@ -110,7 +109,6 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
             role=Role.USER,
             language=self.config.default_locale,
         )
-
 
     async def _import_subscription(
         self,
@@ -284,11 +282,10 @@ class SyncAllUsersFromPanel(Interactor[None, dict[str, int]]):
         errors = 0
 
         for remna_user in panel_users:
-            user_identifier = (
-                getattr(remna_user, "uuid", None) or getattr(remna_user, "id", "unknown")
+            user_identifier = getattr(remna_user, "uuid", None) or getattr(
+                remna_user, "id", "unknown"
             )
             try:
-
                 if remna_user.telegram_id:
                     user = bot_users_map.get(remna_user.telegram_id)
                 else:
@@ -322,7 +319,6 @@ class SyncAllUsersFromPanel(Interactor[None, dict[str, int]]):
                     f"Error syncing RemnaUser '{user_identifier}' exception: {exception}"
                 )
                 errors += 1
-
 
         result = {
             "total_panel_users": len(panel_users),

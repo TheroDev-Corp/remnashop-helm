@@ -318,7 +318,6 @@ class UserFirstConnectionEvent(UserEvent):
     device_limit: Any
     expire_time: Any
 
-
     @property
     def event_key(self) -> str:
         return "event-user.first-connected"
@@ -525,7 +524,6 @@ class SubscriptionRevokedEvent(UserEvent):
     traffic_limit: Any
     device_limit: Any
     expire_time: Any
-
 
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(

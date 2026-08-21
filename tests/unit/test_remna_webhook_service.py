@@ -51,7 +51,6 @@ def mock_redis():
 
 @pytest.fixture
 def webhook_service(mock_uow, mock_user_dao, mock_sub_dao, mock_publisher, mock_redis):
-
     config = MagicMock()
     bot_service = MagicMock()
     sync_user = MagicMock()
@@ -112,4 +111,3 @@ async def test_get_user_by_remna_user_fallback_uuid(webhook_service, mock_user_d
     found = await webhook_service._get_user_by_remna_user(mock_remna_user)
     assert found == expected_user
     mock_user_dao.get_by_remna_uuid.assert_awaited_once_with(mock_remna_user.uuid)
-

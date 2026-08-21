@@ -61,7 +61,6 @@ def sample_plan_dto() -> PlanSnapshotDto:
     )
 
 
-
 @pytest.fixture
 def sample_subscription_dto(sample_plan_dto) -> SubscriptionDto:
     now = datetime.now(timezone.utc)
@@ -82,4 +81,3 @@ def sample_subscription_dto(sample_plan_dto) -> SubscriptionDto:
         created_at=now,
         updated_at=now,
     )
-

@@ -274,4 +274,3 @@ async def test_get_users_by_telegram_id_v2_success(remnawave_service, mock_sdk):
     assert len(users) == 1
     assert users[0].id == 147
     assert users[0].telegram_id == 628126350
-

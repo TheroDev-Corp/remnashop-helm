@@ -1,4 +1,3 @@
-
 from remnapy.models.webhook import WebhookPayloadDto
 
 from src.web.endpoints.remnawave import _normalize_webhook_payload

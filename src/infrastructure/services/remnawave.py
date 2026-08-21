@@ -15,11 +15,8 @@ from remnapy.exceptions import (
     ConflictError,
     NotFoundError,
 )
-
 from remnapy.models import (
     CreateUserRequestDto,
-    DeleteUserAllHwidDeviceRequestDto,
-    DeleteUserHwidDeviceRequestDto,
     DropByUserUuids,
     DropConnectionsRequestDto,
     GetMetadataResponseDto,
@@ -131,10 +128,6 @@ class RemnawaveImpl(Remnawave):
 
         return d
 
-
-
-
-
     def _parse_user_response(self, data: dict[str, Any]) -> UserResponseDto:
         raw_user = data.get("response", data) if isinstance(data, dict) else data
         normalized = self._normalize_user_dict(raw_user)
@@ -215,9 +208,7 @@ class RemnawaveImpl(Remnawave):
             )
             return remna_user
         except ConflictError:
-            logger.warning(
-                f"RemnaUser '{request_dto.username}' already exists in panel"
-            )
+            logger.warning(f"RemnaUser '{request_dto.username}' already exists in panel")
             raise
 
     async def update_user(
@@ -279,9 +270,7 @@ class RemnawaveImpl(Remnawave):
                 f"ID: '{remna_user.id}', telegram_id: '{remna_user.telegram_id}'"
             )
         except (NotFoundError, ApiError) as e:
-            logger.warning(
-                f"RemnaUser '{request_dto.username}' with ID '{id}' not found: {e}"
-            )
+            logger.warning(f"RemnaUser '{request_dto.username}' with ID '{id}' not found: {e}")
             raise NotFoundError(
                 status_code=404,
                 error=ApiErrorResponse(
@@ -289,7 +278,6 @@ class RemnawaveImpl(Remnawave):
                     code="USER_NOT_FOUND",
                 ),
             )
-
 
         if reset_traffic:
             await self.reset_traffic(id)
@@ -337,7 +325,6 @@ class RemnawaveImpl(Remnawave):
             logger.info(f"RemnaUser '{id}' disabled successfully (v3)")
             return
 
-
         try:
             await self.sdk.users.disable_user(id)
             logger.info(f"RemnaUser '{id}' disabled successfully")
@@ -354,9 +341,7 @@ class RemnawaveImpl(Remnawave):
             if del_response.status_code in {200, 204}:
                 logger.info(f"RemnaUser '{id}' deleted successfully (v3)")
                 return True
-            logger.warning(
-                f"Failed to delete RemnaUser '{id}': status {del_response.status_code}"
-            )
+            logger.warning(f"Failed to delete RemnaUser '{id}': status {del_response.status_code}")
             return False
 
         try:
@@ -371,7 +356,6 @@ class RemnawaveImpl(Remnawave):
             logger.warning(f"Failed to delete RemnaUser '{id}'")
 
         return bool(v2_del_response.is_deleted)
-
 
     async def get_user_by_id(self, id: int) -> Optional[UserResponseDto]:
         if not id or id <= 0:
@@ -471,9 +455,7 @@ class RemnawaveImpl(Remnawave):
 
     async def get_all_users(self, limit: int, offset: int) -> list[UserResponseDto]:
         if self.sdk._client:
-            response = await self.sdk._client.get(
-                "/users", params={"start": offset, "size": limit}
-            )
+            response = await self.sdk._client.get("/users", params={"start": offset, "size": limit})
             if response.status_code == 200:
                 users = self._parse_users_list(response.json())
                 logger.debug(f"Fetched {len(users)} RemnaUsers (limit={limit}, offset={offset})")
@@ -514,9 +496,8 @@ class RemnawaveImpl(Remnawave):
 
         return []
 
-
     async def get_devices(self, id: Union[int, UUID, str]) -> list[HwidDeviceDto]:
-        if not self.sdk._client:
+        if not self.sdk._client or not id or id == 0 or id == "0":
             return []
 
         target_param = str(id)
@@ -549,7 +530,7 @@ class RemnawaveImpl(Remnawave):
             return []
 
     async def delete_device(self, user_id: Union[int, UUID, str], hwid: str) -> Optional[int]:
-        if not self.sdk._client:
+        if not self.sdk._client or not user_id or user_id == 0 or user_id == "0":
             return None
 
         if self.is_v3:
@@ -957,5 +938,3 @@ class RemnawaveImpl(Remnawave):
             )
 
         raise ValueError("Either 'plan' or 'subscription' must be provided")
-
-

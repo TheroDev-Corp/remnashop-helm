@@ -61,8 +61,6 @@ def _normalize_webhook_payload(payload_dict: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-
-
 async def _process_remnawave_webhook(
     request: Request,
     config: AppConfig,
@@ -82,7 +80,6 @@ async def _process_remnawave_webhook(
             logger.warning("Webhook validation failed: signature mismatch")
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-
         raw_dict = json.loads(body_str)
         normalized_dict = _normalize_webhook_payload(raw_dict)
         payload = WebhookPayloadDto.from_dict(normalized_dict)
@@ -95,7 +92,6 @@ async def _process_remnawave_webhook(
     if not payload:
         logger.warning("Payload is empty after validation")
         raise HTTPException(status_code=401, detail="Unauthorized")
-
 
     try:
         if WebhookUtility.is_user_event(payload.event):
@@ -117,6 +113,9 @@ async def _process_remnawave_webhook(
         elif WebhookUtility.is_torrent_blocker_event(payload.event):
             report = cast(TorrentBlockerReportDto, WebhookUtility.get_typed_data(payload))
             await remna_webhook_service.handle_torrent_blocker_event(report)
+
+        elif payload.event.startswith("crm.") or payload.event.startswith("service."):
+            logger.info(f"Received Remnawave system/crm event '{payload.event}', acknowledged")
 
         else:
             logger.warning(f"Unhandled Remnawave event type '{payload.event}'")

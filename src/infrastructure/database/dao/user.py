@@ -64,6 +64,8 @@ class UserDaoImpl(UserDao):
         return None
 
     async def get_by_remna_id(self, remna_id: int) -> Optional[UserDto]:
+        if not remna_id:
+            return None
         stmt = (
             select(User)
             .join(Subscription, User.current_subscription_id == Subscription.id)
@@ -78,21 +80,12 @@ class UserDaoImpl(UserDao):
         logger.debug(f"User with remna_id '{remna_id}' not found")
         return None
 
-    async def get_by_remna_uuid(self, remna_uuid: UUID) -> Optional[UserDto]:
-        stmt = (
-            select(User)
-            .join(Subscription, User.current_subscription_id == Subscription.id)
-            .where(Subscription.user_remna_id == remna_uuid)
-        )
-        db_user = await self.session.scalar(stmt)
-
-        if db_user:
-            logger.debug(f"User with remna_uuid '{remna_uuid}' found in database")
-            return self._convert_to_dto(db_user)
-
-        logger.debug(f"User with remna_uuid '{remna_uuid}' not found")
+    async def get_by_remna_uuid(self, remna_uuid: UUID | str | int) -> Optional[UserDto]:
+        if isinstance(remna_uuid, int):
+            return await self.get_by_remna_id(remna_uuid)
+        if isinstance(remna_uuid, str) and remna_uuid.isdigit():
+            return await self.get_by_remna_id(int(remna_uuid))
         return None
-
 
     async def get_by_email(self, email: str) -> Optional[UserDto]:
         stmt = select(User).where(User.email == email)

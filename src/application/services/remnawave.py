@@ -79,6 +79,18 @@ class RemnaWebhookService:
                 pass
         if not user and remna_user.telegram_id:
             user = await self.user_dao.get_by_telegram_id(remna_user.telegram_id)
+            if user and remna_id and remna_id > 0:
+                try:
+                    sub = await self.subscription_dao.get_current(user.id)
+                    if sub and sub.user_remna_id != remna_id:
+                        logger.info(
+                            f"Auto-healing subscription user_remna_id for user '{user.log}': "
+                            f"{sub.user_remna_id} -> {remna_id}"
+                        )
+                        sub.user_remna_id = remna_id
+                        await self.subscription_dao.update(sub)
+                except Exception as e:
+                    logger.debug(f"Failed to auto-heal subscription for user {user.id}: {e}")
         return user
 
     async def handle_user_event(self, event: str, remna_user: RemnaUserDto) -> None:
@@ -170,7 +182,6 @@ class RemnaWebhookService:
         if not user:
             logger.warning(f"Local user not found for remna user '{user_identifier}'")
             return
-
 
         if event == RemnaUserHwidDevicesEvent.ADDED:
             await self.event_bus.publish(
@@ -395,9 +406,7 @@ class RemnaWebhookService:
             subscription = await self.subscription_dao.get_by_remna_id(remna_user.id)
 
             if not subscription:
-                logger.warning(
-                    f"Subscription not found for ID '{remna_user.id}', delete aborted"
-                )
+                logger.warning(f"Subscription not found for ID '{remna_user.id}', delete aborted")
                 return
 
             user_id = subscription.user_id
@@ -479,7 +488,6 @@ class RemnaWebhookService:
                     expire_time=i18n_format_expire_time(remna_user.expire_at),
                 )
             )
-
 
     @staticmethod
     def _build_torrent_blocker_key(

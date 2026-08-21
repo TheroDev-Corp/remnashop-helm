@@ -110,7 +110,12 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
             raise ValueError(f"Current subscription for user '{user_id}' not found")
 
         remna_user = await self.remnawave.get_user_by_id(subscription.user_remna_id)
-        if remna_user and target_user.telegram_id and remna_user.telegram_id and remna_user.telegram_id != target_user.telegram_id:
+        if (
+            remna_user
+            and target_user.telegram_id
+            and remna_user.telegram_id
+            and remna_user.telegram_id != target_user.telegram_id
+        ):
             remna_user = None
 
         if not remna_user and target_user.telegram_id:

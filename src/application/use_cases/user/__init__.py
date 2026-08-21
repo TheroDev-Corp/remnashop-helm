@@ -10,7 +10,8 @@ from .commands.blocking import (
     ToggleUserBlockedStatus,
     UnblockAllUsers,
 )
-from .commands.management import DeleteUser, DeleteUserDto
+from .commands.management import DeleteUser
+from .commands.management import DeleteUserDto as DeleteUserDto
 from .commands.messaging import SendMessageToUser
 from .commands.profile_edit import (
     ChangeUserPoints,

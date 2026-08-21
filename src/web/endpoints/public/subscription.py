@@ -143,7 +143,12 @@ async def get_current_subscription(
         return None
 
     remna_user = await remnawave.get_user_by_id(current_subscription.user_remna_id)
-    if remna_user and user.telegram_id and remna_user.telegram_id and remna_user.telegram_id != user.telegram_id:
+    if (
+        remna_user
+        and user.telegram_id
+        and remna_user.telegram_id
+        and remna_user.telegram_id != user.telegram_id
+    ):
         remna_user = None
 
     if not remna_user and user.telegram_id:

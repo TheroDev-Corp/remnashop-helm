@@ -67,6 +67,8 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
         return None
 
     async def get_by_remna_id(self, user_remna_id: int) -> Optional[SubscriptionDto]:
+        if not user_remna_id:
+            return None
         stmt = select(Subscription).where(Subscription.user_remna_id == user_remna_id)
         db_subscription = await self.session.scalar(stmt)
 
