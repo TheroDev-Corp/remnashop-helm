@@ -108,7 +108,7 @@ async def test_sync_remna_user_found_by_id(mock_uow, mock_user_dao, mock_sub_dao
         updated_at=now,
     )
 
-    mock_user_dao.get_by_remna_id.return_value = local_user
+    mock_user_dao.get_by_telegram_id.return_value = local_user
     mock_sub_dao.get_by_user_id.return_value = local_sub
     mock_sub_dao.get_current = AsyncMock(return_value=local_sub)
     mock_remnawave.apply_sync.return_value = local_sub
@@ -122,4 +122,4 @@ async def test_sync_remna_user_found_by_id(mock_uow, mock_user_dao, mock_sub_dao
     )
     await use_case(actor, SyncRemnaUserDto(remna_user=remna_user, creating=False))
 
-    mock_user_dao.get_by_remna_id.assert_awaited_once_with(500)
+    mock_user_dao.get_by_telegram_id.assert_awaited_once_with(999999)

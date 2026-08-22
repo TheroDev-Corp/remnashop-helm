@@ -67,7 +67,8 @@ def webhook_service(mock_uow, mock_user_dao, mock_sub_dao, mock_publisher, mock_
 
 
 @pytest.mark.asyncio
-async def test_get_user_by_remna_user_by_id(webhook_service, mock_user_dao):
+@pytest.mark.asyncio
+async def test_get_user_by_remna_user_by_telegram_id(webhook_service, mock_user_dao):
     mock_remna_user = MagicMock()
     mock_remna_user.id = 12345
     mock_remna_user.uuid = UUID("11111111-1111-1111-1111-111111111111")
@@ -82,15 +83,15 @@ async def test_get_user_by_remna_user_by_id(webhook_service, mock_user_dao):
         referral_code="REF",
         role=Role.USER,
     )
-    mock_user_dao.get_by_remna_id.return_value = expected_user
+    mock_user_dao.get_by_telegram_id.return_value = expected_user
 
     found = await webhook_service._get_user_by_remna_user(mock_remna_user)
     assert found == expected_user
-    mock_user_dao.get_by_remna_id.assert_awaited_once_with(12345)
+    mock_user_dao.get_by_telegram_id.assert_awaited_once_with(999999)
 
 
 @pytest.mark.asyncio
-async def test_get_user_by_remna_user_fallback_uuid(webhook_service, mock_user_dao):
+async def test_get_user_by_remna_user_fallback_remna_id(webhook_service, mock_user_dao):
     mock_remna_user = MagicMock()
     mock_remna_user.id = 12345
     mock_remna_user.uuid = UUID("11111111-1111-1111-1111-111111111111")
@@ -105,9 +106,8 @@ async def test_get_user_by_remna_user_fallback_uuid(webhook_service, mock_user_d
         referral_code="REF2",
         role=Role.USER,
     )
-    mock_user_dao.get_by_remna_id.return_value = None
-    mock_user_dao.get_by_remna_uuid.return_value = expected_user
+    mock_user_dao.get_by_remna_id.return_value = expected_user
 
     found = await webhook_service._get_user_by_remna_user(mock_remna_user)
     assert found == expected_user
-    mock_user_dao.get_by_remna_uuid.assert_awaited_once_with(mock_remna_user.uuid)
+    mock_user_dao.get_by_remna_id.assert_awaited_once_with(12345)

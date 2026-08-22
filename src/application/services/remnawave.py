@@ -70,14 +70,8 @@ class RemnaWebhookService:
     async def _get_user_by_remna_user(self, remna_user: RemnaUserDto) -> Optional[UserDto]:
         user = None
         remna_id = getattr(remna_user, "id", None)
-        if remna_id:
-            user = await self.user_dao.get_by_remna_id(remna_id)
-        if not user and getattr(remna_user, "uuid", None):
-            try:
-                user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
-            except Exception:
-                pass
-        if not user and remna_user.telegram_id:
+
+        if remna_user.telegram_id:
             user = await self.user_dao.get_by_telegram_id(remna_user.telegram_id)
             if user and remna_id and remna_id > 0:
                 try:
@@ -91,6 +85,19 @@ class RemnaWebhookService:
                         await self.subscription_dao.update(sub)
                 except Exception as e:
                     logger.debug(f"Failed to auto-heal subscription for user {user.id}: {e}")
+            if user:
+                return user
+
+        if remna_id:
+            user = await self.user_dao.get_by_remna_id(remna_id)
+            if (
+                user
+                and remna_user.telegram_id
+                and user.telegram_id
+                and user.telegram_id != remna_user.telegram_id
+            ):
+                user = None
+
         return user
 
     async def handle_user_event(self, event: str, remna_user: RemnaUserDto) -> None:

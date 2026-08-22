@@ -652,7 +652,15 @@ async def sync_getter(  # noqa: C901
     remna_updated_at = None
     remna_user = None
 
-    if bot_sub and bot_sub.user_remna_id > 0:
+    if target_user.telegram_id:
+        try:
+            remna_users = await remnawave.get_users_by_telegram_id(target_user.telegram_id)
+            if remna_users:
+                remna_user = remna_users[0]
+        except Exception:
+            pass
+
+    if not remna_user and bot_sub and bot_sub.user_remna_id > 0:
         try:
             remna_user = await remnawave.get_user_by_id(bot_sub.user_remna_id)
             if (
@@ -662,14 +670,6 @@ async def sync_getter(  # noqa: C901
                 and remna_user.telegram_id != target_user.telegram_id
             ):
                 remna_user = None
-        except Exception:
-            pass
-
-    if not remna_user and target_user.telegram_id:
-        try:
-            remna_users = await remnawave.get_users_by_telegram_id(target_user.telegram_id)
-            if remna_users:
-                remna_user = remna_users[0]
         except Exception:
             pass
 
