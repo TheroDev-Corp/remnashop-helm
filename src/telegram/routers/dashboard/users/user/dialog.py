@@ -21,6 +21,7 @@ from src.telegram.widgets.kbd import (
     Select,
     Start,
     SwitchTo,
+    Url,
 )
 
 from .getters import (
@@ -137,6 +138,14 @@ user = Window(
             id="message",
             state=DashboardUser.MESSAGE,
         ),
+        Url(
+            text=I18nFormat("btn-user.open-chat"),
+            url=Format("{tg_url}"),
+            id="open_chat",
+            when=F["tg_url"],
+        ),
+    ),
+    Row(
         Button(
             text=I18nFormat("btn-user.give-access"),
             id="give_access",
