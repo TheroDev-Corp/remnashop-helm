@@ -68,12 +68,9 @@ async def user_getter(
         dialog_manager.dialog_data[TARGET_TELEGRAM_ID] = profile.target_user.telegram_id
 
     tg_url = None
-    if profile.target_user.telegram_id:
-        if profile.target_user.username:
-            clean_username = profile.target_user.username.lstrip("@")
-            tg_url = f"https://t.me/{clean_username}"
-        else:
-            tg_url = f"tg://user?id={profile.target_user.telegram_id}"
+    if profile.target_user.username:
+        clean_username = profile.target_user.username.lstrip("@")
+        tg_url = f"https://t.me/{clean_username}"
 
     data: dict[str, Any] = {
         "from_referral_user_id": from_referral_user_id,
