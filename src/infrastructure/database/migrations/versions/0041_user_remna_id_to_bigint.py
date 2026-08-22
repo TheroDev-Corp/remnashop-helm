@@ -16,8 +16,7 @@ def upgrade() -> None:
         existing_type=sa.UUID(),
         type_=sa.BigInteger(),
         postgresql_using=(
-            "CASE WHEN user_remna_id::text ~ '^[0-9]+$' "
-            "THEN user_remna_id::text::bigint ELSE 0 END"
+            "CASE WHEN user_remna_id::text ~ '^[0-9]+$' THEN user_remna_id::text::bigint ELSE 0 END"
         ),
         existing_nullable=False,
     )

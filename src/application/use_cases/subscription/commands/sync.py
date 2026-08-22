@@ -55,11 +55,6 @@ class CheckSubscriptionSyncState(Interactor[int, bool]):
             remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
             if remna_users:
                 remna_user = remna_users[0]
-                if bot_sub and bot_sub.user_remna_id != remna_user.id:
-                    bot_sub.user_remna_id = remna_user.id
-                    async with self.uow:
-                        await self.subscription_dao.update(bot_sub)
-                        await self.uow.commit()
 
         remna_sub = RemnaSubscriptionDto.from_remna_user(remna_user) if remna_user else None
 

@@ -5,10 +5,8 @@ from adaptix import Retort
 from aiogram_dialog import DialogManager
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
-from remnapy import RemnawaveSDK
-from remnapy.exceptions import NotFoundError
 
-from src.application.common import TranslatorRunner
+from src.application.common import Remnawave, TranslatorRunner
 from src.application.common.dao import (
     PlanDao,
     ReferralDao,
@@ -41,7 +39,6 @@ from src.core.constants import (
     USER_KEY,
 )
 from src.core.enums import PlanAvailability, Role
-from src.core.types import RemnaUserDto
 from src.core.utils.i18n_helpers import (
     i18n_format_bytes_to_unit,
     i18n_format_days,
@@ -641,7 +638,7 @@ async def sync_getter(  # noqa: C901
     i18n: FromDishka[TranslatorRunner],
     user_dao: FromDishka[UserDao],
     subscription_dao: FromDishka[SubscriptionDao],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave: FromDishka[Remnawave],
     **kwargs: Any,
 ) -> dict[str, Any]:
     target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
@@ -653,21 +650,39 @@ async def sync_getter(  # noqa: C901
     bot_sub = await subscription_dao.get_current(target_user.id)
     remna_sub: Optional[RemnaSubscriptionDto] = None
     remna_updated_at = None
+    remna_user = None
 
-    if target_user.telegram_id:
+    if bot_sub and bot_sub.user_remna_id > 0:
         try:
-            result = await remnawave_sdk.users.get_users_by_telegram_id(
-                telegram_id=str(target_user.telegram_id)
-            )
-            if result:
-                remna_user: RemnaUserDto = result[0]
-                remna_sub = RemnaSubscriptionDto.from_remna_user(remna_user)
-                remna_updated_at = remna_user.updated_at
-        except NotFoundError:
+            remna_user = await remnawave.get_user_by_id(bot_sub.user_remna_id)
+            if (
+                remna_user
+                and target_user.telegram_id
+                and remna_user.telegram_id
+                and remna_user.telegram_id != target_user.telegram_id
+            ):
+                remna_user = None
+        except Exception:
             pass
 
-    squads_res = await remnawave_sdk.internal_squads.get_internal_squads()
-    squads_map = {s.uuid: s.name for s in squads_res.internal_squads}
+    if not remna_user and target_user.telegram_id:
+        try:
+            remna_users = await remnawave.get_users_by_telegram_id(target_user.telegram_id)
+            if remna_users:
+                remna_user = remna_users[0]
+        except Exception:
+            pass
+
+    if remna_user:
+        remna_sub = RemnaSubscriptionDto.from_remna_user(remna_user)
+        remna_updated_at = remna_user.updated_at
+
+    squads_map: dict[UUID, str] = {}
+    try:
+        internal_squads = await remnawave.get_internal_squads()
+        squads_map = {s.uuid: s.name for s in internal_squads}
+    except Exception:
+        pass
 
     def format_subscription(sub: Union[None, SubscriptionDto, RemnaSubscriptionDto]) -> str:
         if not sub:
