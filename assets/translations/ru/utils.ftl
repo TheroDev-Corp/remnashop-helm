@@ -77,19 +77,14 @@ frg-user =
     </blockquote>
 
 frg-user-info =
-IMPORTED = Импортированный
-
     <blockquote>
     { $telegram_id ->
         [0] • <b>Почта</b>: <code>{ $email }</code>
         *[HAS] • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
     }
-    • <b>Имя</b>: { $telegram_id ->
-        [0] { $name }
-        *[HAS] <a href="tg://user?id={ NUMBER($telegram_id, useGrouping: 0) }">{ $name }</a>
-    } { $username ->
+    • <b>Имя</b>: { $name } { $username ->
         [0] { empty }
-        *[HAS] (<a href="https://t.me/{ $username }">@{ $username }</a>)
+        *[HAS] (<a href="tg://user?id={ $telegram_id }">@{ $username }</a>)
     }
     </blockquote>
 
@@ -103,12 +98,9 @@ frg-user-details =
         [0] • <b>ID в боте</b>: <code>{ $db_id }</code>
         *[HAS] • <b>ID в боте</b>: <code>{ $db_id }</code> / <b>В панели</b>: <code>{ $subscription_id }</code>
     }
-    • <b>Имя</b>: { $telegram_id ->
-        [0] { $name }
-        *[HAS] <a href="tg://user?id={ NUMBER($telegram_id, useGrouping: 0) }">{ $name }</a>
-    } { $username ->
+    • <b>Имя</b>: { $name } { $username ->
         [0] { space }
-        *[HAS] (<a href="https://t.me/{ $username }">@{ $username }</a>)
+        *[HAS] (<a href="tg://user?id={ $telegram_id }">@{ $username }</a>)
     }
     • <b>Роль</b>: { role }
     • <b>Язык</b>: { language }
