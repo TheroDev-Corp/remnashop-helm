@@ -152,7 +152,6 @@ btn-user =
     .statistics = 📊 Статистика
     .referrals = 👪 Рефералы
     .message = 📩 Сообщение
-    .open-chat = 💬 Чат в Telegram
     .role = 👮‍♂️ Роль
     .transactions = 🧾 Транзакции
     .give-access = 🔑 Доступ к планам
