@@ -162,6 +162,7 @@ async def test_update_user_v3_not_found(
     fake_response = MagicMock()
     fake_response.status_code = 404
     mock_sdk._client.patch = AsyncMock(return_value=fake_response)
+    sample_user_dto.telegram_id = None
 
     with pytest.raises(NotFoundError):
         await remnawave_service.update_user(sample_user_dto, id=999, plan=sample_plan_dto)

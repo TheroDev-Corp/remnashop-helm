@@ -211,7 +211,7 @@ class RemnawaveImpl(Remnawave):
             logger.warning(f"RemnaUser '{request_dto.username}' already exists in panel")
             raise
 
-    async def update_user(
+    async def update_user(  # noqa: C901
         self,
         user: UserDto,
         id: int,
@@ -219,11 +219,22 @@ class RemnawaveImpl(Remnawave):
         subscription: Optional[SubscriptionDto] = None,
         reset_traffic: bool = False,
     ) -> UserResponseDto:
-        if self.is_v3 and self.sdk._client:
-            payload = self._build_v3_update_payload(user, id, plan, subscription)
-            response = await self.sdk._client.patch("/users", json=payload)
-            if response.status_code == 404:
-                logger.warning(f"RemnaUser '{user.remna_name}' with ID '{id}' not found (404)")
+        if id <= 0:
+            if user.telegram_id:
+                logger.warning(
+                    f"Invalid RemnaUser id '{id}' provided for user '{user.remna_name}'. "
+                    f"Attempting auto-healing by telegram_id {user.telegram_id}"
+                )
+                existing_users = await self.get_users_by_telegram_id(user.telegram_id)
+                if existing_users:
+                    id = existing_users[0].id
+                else:
+                    logger.info(
+                        f"User '{user.remna_name}' not found in panel during auto-healing. "
+                        "Creating new user."
+                    )
+                    return await self.create_user(user=user, plan=plan, subscription=subscription)
+            else:
                 raise NotFoundError(
                     status_code=404,
                     error=ApiErrorResponse(
@@ -231,60 +242,108 @@ class RemnawaveImpl(Remnawave):
                         code="USER_NOT_FOUND",
                     ),
                 )
-            if response.status_code not in {200, 201}:
-                logger.error(
-                    f"Failed to update RemnaUser '{id}' in v3: "
-                    f"status {response.status_code}, body: {response.text}"
+
+        async def _execute_update(target_id: int) -> UserResponseDto:
+            if self.is_v3 and self.sdk._client:
+                payload = self._build_v3_update_payload(user, target_id, plan, subscription)
+                response = await self.sdk._client.patch("/users", json=payload)
+                if response.status_code == 404:
+                    logger.warning(
+                        f"RemnaUser '{user.remna_name}' with ID '{target_id}' not found (404)"
+                    )
+                    raise NotFoundError(
+                        status_code=404,
+                        error=ApiErrorResponse(
+                            message=f"User {target_id} not found",
+                            code="USER_NOT_FOUND",
+                        ),
+                    )
+                if response.status_code not in {200, 201}:
+                    logger.error(
+                        f"Failed to update RemnaUser '{target_id}' in v3: "
+                        f"status {response.status_code}, body: {response.text}"
+                    )
+                    response.raise_for_status()
+
+                res_user = self._parse_user_response(response.json())
+                logger.info(
+                    f"RemnaUser '{res_user.username}' updated successfully (v3). "
+                    f"ID: '{res_user.id}', telegram_id: '{res_user.telegram_id}'"
                 )
-                response.raise_for_status()
+                return res_user
 
-            remna_user = self._parse_user_response(response.json())
-            logger.info(
-                f"RemnaUser '{remna_user.username}' updated successfully (v3). "
-                f"ID: '{remna_user.id}', telegram_id: '{remna_user.telegram_id}'"
+            uuid = getattr(user, "remna_uuid", None)
+            username = user.remna_name
+            if not uuid and target_id and target_id > 0:
+                existing = await self.get_user_by_id(target_id)
+                if existing:
+                    uuid = existing.uuid
+                    username = existing.username
+
+            request_dto = self._build_update_request(
+                user=user,
+                id=target_id,
+                plan=plan,
+                subscription=subscription,
+                uuid=uuid,
+                username=username,
             )
-            if reset_traffic:
-                await self.reset_traffic(id)
-            return remna_user
+            try:
+                res_user = await self.sdk.users.update_user(request_dto)
+                logger.info(
+                    f"RemnaUser '{res_user.username}' updated successfully. "
+                    f"ID: '{res_user.id}', telegram_id: '{res_user.telegram_id}'"
+                )
+                return res_user
+            except (NotFoundError, ApiError) as e:
+                logger.warning(
+                    f"RemnaUser '{request_dto.username}' with ID '{target_id}' not found: {e}"
+                )
+                raise NotFoundError(
+                    status_code=404,
+                    error=ApiErrorResponse(
+                        message=f"User {target_id} not found",
+                        code="USER_NOT_FOUND",
+                    ),
+                )
 
-        uuid = getattr(user, "remna_uuid", None)
-        username = user.remna_name
-        if not uuid and id and id > 0:
-            existing = await self.get_user_by_id(id)
-            if existing:
-                uuid = existing.uuid
-                username = existing.username
-
-        request_dto = self._build_update_request(
-            user=user,
-            id=id,
-            plan=plan,
-            subscription=subscription,
-            uuid=uuid,
-            username=username,
-        )
         try:
-            remna_user = await self.sdk.users.update_user(request_dto)
-            logger.info(
-                f"RemnaUser '{remna_user.username}' updated successfully. "
-                f"ID: '{remna_user.id}', telegram_id: '{remna_user.telegram_id}'"
-            )
-        except (NotFoundError, ApiError) as e:
-            logger.warning(f"RemnaUser '{request_dto.username}' with ID '{id}' not found: {e}")
-            raise NotFoundError(
-                status_code=404,
-                error=ApiErrorResponse(
-                    message=f"User {id} not found",
-                    code="USER_NOT_FOUND",
-                ),
-            )
+            remna_user = await _execute_update(id)
+        except (NotFoundError, ApiError) as not_found_exc:
+            if user.telegram_id:
+                logger.warning(
+                    f"RemnaUser '{id}' not found in panel (404). "
+                    f"Attempting auto-healing by telegram_id {user.telegram_id} "
+                    f"for user '{user.remna_name}'"
+                )
+                existing_users = await self.get_users_by_telegram_id(user.telegram_id)
+                if existing_users and existing_users[0].id != id:
+                    logger.info(
+                        f"Auto-healed RemnaUser ID for user '{user.remna_name}': "
+                        f"{id} -> {existing_users[0].id}. Retrying update."
+                    )
+                    remna_user = await _execute_update(existing_users[0].id)
+                elif not existing_users:
+                    logger.info(
+                        f"RemnaUser '{user.remna_name}' does not exist in panel. "
+                        "Auto-creating user."
+                    )
+                    return await self.create_user(user=user, plan=plan, subscription=subscription)
+                else:
+                    raise not_found_exc
+            else:
+                raise
 
         if reset_traffic:
-            await self.reset_traffic(id)
+            await self.reset_traffic(remna_user.id)
 
         return remna_user
 
     async def enable_user(self, id: int) -> None:
+        if id <= 0:
+            logger.warning(f"Skipping enable_user for invalid ID '{id}'")
+            return
+
         if self.is_v3 and self.sdk._client:
             response = await self.sdk._client.post(f"/users/{id}/actions/enable")
             if response.status_code == 404:
@@ -309,6 +368,10 @@ class RemnawaveImpl(Remnawave):
             raise
 
     async def disable_user(self, id: int) -> None:
+        if id <= 0:
+            logger.warning(f"Skipping disable_user for invalid ID '{id}'")
+            return
+
         if self.is_v3 and self.sdk._client:
             response = await self.sdk._client.post(f"/users/{id}/actions/disable")
             if response.status_code == 404:
@@ -497,6 +560,13 @@ class RemnawaveImpl(Remnawave):
         return []
 
     async def get_devices(self, id: Union[int, UUID, str]) -> list[HwidDeviceDto]:
+        try:
+            if int(id) <= 0:
+                logger.warning(f"Skipping get_devices for invalid ID '{id}'")
+                return []
+        except (ValueError, TypeError):
+            pass
+
         if not self.sdk._client or not id or id == 0 or id == "0":
             return []
 
@@ -633,6 +703,10 @@ class RemnawaveImpl(Remnawave):
             logger.warning(f"Failed to drop connections for RemnaUser '{user_id}': {e}")
 
     async def reset_traffic(self, id: int) -> Optional[UserResponseDto]:
+        if id <= 0:
+            logger.warning(f"Skipping reset_traffic for invalid ID '{id}'")
+            return None
+
         if self.is_v3 and self.sdk._client:
             response = await self.sdk._client.post(f"/users/{id}/actions/reset-traffic")
             if response.status_code == 404:

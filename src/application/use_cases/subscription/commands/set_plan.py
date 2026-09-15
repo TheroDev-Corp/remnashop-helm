@@ -48,12 +48,29 @@ class SetUserSubscription(Interactor[SetUserSubscriptionDto, None]):
             subscription = await self.subscription_dao.get_current(target_user.id)
 
             if subscription:
-                remna_user = await self.remnawave.update_user(
-                    user=target_user,
-                    id=subscription.user_remna_id,
-                    plan=plan_snapshot,
-                    reset_traffic=True,
-                )
+                if subscription.user_remna_id <= 0:
+                    if target_user.telegram_id:
+                        existing_remna_users = await self.remnawave.get_users_by_telegram_id(
+                            target_user.telegram_id
+                        )
+                        remna_id = existing_remna_users[0].id if existing_remna_users else None
+                    else:
+                        remna_id = None
+                else:
+                    remna_id = subscription.user_remna_id
+
+                if remna_id:
+                    remna_user = await self.remnawave.update_user(
+                        user=target_user,
+                        id=remna_id,
+                        plan=plan_snapshot,
+                        reset_traffic=True,
+                    )
+                else:
+                    remna_user = await self.remnawave.create_user(
+                        user=target_user,
+                        plan=plan_snapshot,
+                    )
                 await self.subscription_dao.update_status(
                     subscription_id=subscription.id,
                     status=SubscriptionStatus.DELETED,

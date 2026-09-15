@@ -176,12 +176,21 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                 subscription.internal_squads = plan.internal_squads
                 subscription.external_squad = plan.external_squad
 
-                await self.remnawave.update_user(
+                if subscription.user_remna_id <= 0 and user.telegram_id:
+                    existing_users = await self.remnawave.get_users_by_telegram_id(
+                        user.telegram_id
+                    )
+                    if existing_users:
+                        subscription.user_remna_id = existing_users[0].id
+
+                remna_user = await self.remnawave.update_user(
                     user=user,
                     id=subscription.user_remna_id,
                     subscription=subscription,
                     reset_traffic=True,
                 )
+                if remna_user and remna_user.id != subscription.user_remna_id:
+                    subscription.user_remna_id = remna_user.id
 
                 subscription.plan_snapshot = plan
                 await self.subscription_dao.update(subscription)
@@ -203,12 +212,26 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                     status=SubscriptionStatus.DELETED,
                 )
 
-                updated_user = await self.remnawave.update_user(
-                    user=user,
-                    id=subscription.user_remna_id,
-                    plan=plan,
-                    reset_traffic=True,
-                )
+                if subscription.user_remna_id <= 0 and user.telegram_id:
+                    existing_users = await self.remnawave.get_users_by_telegram_id(
+                        user.telegram_id
+                    )
+                    remna_id = existing_users[0].id if existing_users else 0
+                else:
+                    remna_id = subscription.user_remna_id
+
+                if remna_id > 0:
+                    updated_user = await self.remnawave.update_user(
+                        user=user,
+                        id=remna_id,
+                        plan=plan,
+                        reset_traffic=True,
+                    )
+                else:
+                    updated_user = await self.remnawave.create_user(
+                        user=user,
+                        plan=plan,
+                    )
 
                 new_sub = self._build_subscription_dto(updated_user, plan)
                 await self.subscription_dao.create(
