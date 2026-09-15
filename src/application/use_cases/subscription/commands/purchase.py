@@ -52,8 +52,16 @@ class ActivateTrialSubscription(Interactor[ActivateTrialSubscriptionDto, None]):
         if not user.is_trial_available:
             raise TrialNotAvailableError(f"Trial not available for user '{user.remna_name}'")
 
+        # Read from the DB, not the (possibly stale) DTO: a trial must never overwrite an existing
+        # subscription (web endpoint, stale menu button, or a repeated tap).
+        if await self.subscription_dao.get_current(user.id):
+            raise TrialNotAvailableError(f"User '{user.remna_name}' already has a subscription")
+
         logger.info(f"{actor.log} Started trial for user '{user.id}'")
 
+        # create_user may PATCH an existing owned panel user: refuse a binding conflict first,
+        # so the DB guard in subscription_dao.create cannot fail after the panel changed.
+        await resolve_bindable_remna_id(self.remnawave, self.subscription_dao, user, None)
         created_user = await self.remnawave.create_user(user, plan=plan)
 
         trial_subscription = SubscriptionDto(
@@ -139,6 +147,8 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
         async with self.uow:
             # 1. NEW PURCHASE (NOT TRIAL)
             if purchase_type == PurchaseType.NEW and not has_trial:
+                # See ActivateTrialSubscription: check the binding before create_user mutates.
+                await resolve_bindable_remna_id(self.remnawave, self.subscription_dao, user, None)
                 created_user = await self.remnawave.create_user(user, plan=plan)
                 new_sub = self._build_subscription_dto(created_user, plan)
 

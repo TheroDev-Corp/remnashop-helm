@@ -1,5 +1,6 @@
+import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Final, Optional
 
 from loguru import logger
 
@@ -8,6 +9,17 @@ from src.application.common.dao import AdLinkDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import AdLinkDto, UserDto
+from src.core.enums import Deeplink
+
+AD_LINK_CODE_PATTERN: Final = re.compile(r"^[A-Za-z0-9_-]+$")
+TELEGRAM_START_PARAM_MAX_LENGTH: Final[int] = 64
+
+
+def validate_ad_link_code(code: str) -> None:
+    """Telegram accepts only [A-Za-z0-9_-] up to 64 chars as a /start payload (`ad_<code>`)."""
+    payload = f"{Deeplink.ADVERTISING.value}_{code}"
+    if not AD_LINK_CODE_PATTERN.match(code) or len(payload) > TELEGRAM_START_PARAM_MAX_LENGTH:
+        raise ValueError(f"Invalid ad link code '{code}'")
 
 
 @dataclass(frozen=True)
@@ -32,6 +44,7 @@ class CreateAdLink(Interactor[CreateAdLinkDto, AdLinkDto]):
     async def _execute(self, actor: UserDto, data: CreateAdLinkDto) -> AdLinkDto:
         async with self.uow:
             if data.code:
+                validate_ad_link_code(data.code)
                 existing = await self.ad_link_dao.get_by_code(data.code)
                 if existing:
                     raise ValueError(f"Ad link with code '{data.code}' already exists")
@@ -73,8 +86,16 @@ class UpdateAdLink(Interactor[UpdateAdLinkDto, Optional[AdLinkDto]]):
         self.ad_link_dao = ad_link_dao
 
     async def _execute(self, actor: UserDto, data: UpdateAdLinkDto) -> Optional[AdLinkDto]:
+        link = data.link
+        validate_ad_link_code(link.code)
+
         async with self.uow:
-            updated = await self.ad_link_dao.update(data.link)
+            existing = await self.ad_link_dao.get_by_code(link.code)
+            if existing and existing.id != link.id:
+                raise ValueError(f"Ad link with code '{link.code}' already exists")
+            # The dialog rebuilds the DTO from dialog_data, so its change tracking is empty:
+            # write every field explicitly.
+            updated = await self.ad_link_dao.update(link.as_fully_changed())
             await self.uow.commit()
 
         if updated:

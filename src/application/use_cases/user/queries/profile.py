@@ -63,7 +63,7 @@ class GetUserProfile(Interactor[int, GetUserProfileResultDto]):
 @dataclass(frozen=True)
 class GetUserProfileSubscriptionResultDto:
     subscription: SubscriptionDto
-    remna_user: RemnaUserDto
+    remna_user: Optional[RemnaUserDto]
     last_node_name: Optional[str] = None
     external_squad: Optional[GetExternalSquadByUuidResponseDto] = None
 
@@ -73,7 +73,7 @@ class GetUserProfileSubscriptionResultDto:
 
     @property
     def formatted_internal_squads(self) -> Optional[str]:
-        if not self.remna_user.active_internal_squads:
+        if not self.remna_user or not self.remna_user.active_internal_squads:
             return None
         return ", ".join(s.name for s in self.remna_user.active_internal_squads)
 
@@ -115,7 +115,10 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
 
         remna_user = await self.remnawave.resolve_user(target_user, subscription.user_remna_id)
         if not remna_user:
-            raise ValueError(f"User Remnawave for '{user_id}' not found")
+            # Still render the window: its Delete/Reissue actions are how an admin cleans up an
+            # orphaned subscription (DeleteSubscription handles a missing owned panel user).
+            logger.warning(f"{actor.log} No RemnaUser owned by user '{user_id}' found")
+            return GetUserProfileSubscriptionResultDto(subscription=subscription, remna_user=None)
 
         if subscription.user_remna_id != remna_user.id:
             # Heal only from a resolve_user result (ownership already verified).
@@ -144,9 +147,14 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
 
         external_squad = None
         if remna_user.external_squad_uuid:
-            external_squad = await self.remnawave_sdk.external_squads.get_external_squad_by_uuid(
-                uuid=remna_user.external_squad_uuid
-            )
+            try:
+                external_squad = (
+                    await self.remnawave_sdk.external_squads.get_external_squad_by_uuid(
+                        uuid=remna_user.external_squad_uuid
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Failed to fetch external squad info: {e}")
 
         return GetUserProfileSubscriptionResultDto(
             subscription=subscription,

@@ -328,6 +328,10 @@ async def test_get_users_by_email_is_exact_and_case_insensitive(service, panel):
         ({"telegram_id": None, "username": "rs_123456789"}, True),
         ({"telegram_id": None, "username": "rs_987654321"}, False),
         ({"telegram_id": None, "username": "manual", "email": "john@example.com"}, False),
+        # Created while the user was web-only (id=1), before linking Telegram.
+        ({"telegram_id": None, "username": "rs_web_1"}, True),
+        ({"telegram_id": None, "username": "rs_web_2"}, False),
+        ({"telegram_id": 987654321, "username": "rs_web_1"}, False),
     ],
 )
 def test_is_owned_by_telegram_user(service, sample_user_dto, panel_kwargs, expected):
@@ -406,6 +410,20 @@ async def test_resolve_user_returns_none_when_nothing_owned(service, panel, samp
     )
 
     assert await service.resolve_user(sample_user_dto, 149) is None
+
+
+async def test_resolve_user_finds_panel_user_created_before_telegram_link(
+    service, panel, sample_user_dto
+):
+    # Web user id=1 bought as rs_web_1, then linked Telegram: the stored id and the web username
+    # both still resolve to the same panel user.
+    web_user = _user(55, telegram_id=None, username="rs_web_1")
+    panel.on("GET", "/users/55", _resp(200, _one(web_user)))
+    panel.on("GET", "/users/stream", _resp(200, _stream([])))
+    panel.on("GET", "/users/by-username/rs_web_1", _resp(200, _one(web_user)))
+
+    assert (await service.resolve_user(sample_user_dto, 55)).id == 55
+    assert (await service.resolve_user(sample_user_dto)).id == 55
 
 
 async def test_resolve_user_prefers_username_match(service, panel, sample_user_dto):

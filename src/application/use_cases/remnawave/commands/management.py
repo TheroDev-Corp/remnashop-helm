@@ -42,6 +42,12 @@ async def _require_owned_remna_id(
     return remna_user.id
 
 
+def _ensure_can_manage(actor: UserDto, target_user: UserDto) -> None:
+    if actor.id != target_user.id and not actor.role > target_user.role:
+        logger.warning(f"{actor.log} denied managing subscription of {target_user.log}")
+        raise PermissionDeniedError()
+
+
 @dataclass(frozen=True)
 class DeleteUserDeviceDto:
     user_id: int
@@ -74,26 +80,30 @@ class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
             )
             raise PermissionDeniedError()
 
-        settings = await self.settings_dao.get()
-        extra = settings.extra.device_single_reset
-
-        if not extra.enabled:
-            raise ValueError("Single device reset is disabled")
-
         target_user = actor if is_self else await self.user_dao.get_by_id(data.user_id)
         if not target_user:
             raise ValueError(f"User '{data.user_id}' not found")
+        _ensure_can_manage(actor, target_user)
 
         current_subscription = await self.subscription_dao.get_current(data.user_id)
         if not current_subscription:
             raise ValueError(f"Subscription for user_id '{data.user_id}' not found")
 
-        if extra.cooldown_hours > 0 and current_subscription.device_single_reset_at:
-            available_at = current_subscription.device_single_reset_at + timedelta(
-                hours=extra.cooldown_hours
-            )
-            if datetime_now() < available_at:
-                raise CooldownError(available_at)
+        # The self-service setting and cooldown only limit users acting on themselves: an admin
+        # removing a device must neither be blocked by them nor spend the user's cooldown.
+        if is_self:
+            settings = await self.settings_dao.get()
+            extra = settings.extra.device_single_reset
+
+            if not extra.enabled:
+                raise ValueError("Single device reset is disabled")
+
+            if extra.cooldown_hours > 0 and current_subscription.device_single_reset_at:
+                available_at = current_subscription.device_single_reset_at + timedelta(
+                    hours=extra.cooldown_hours
+                )
+                if datetime_now() < available_at:
+                    raise CooldownError(available_at)
 
         async with self.uow:
             remna_id = await _require_owned_remna_id(
@@ -101,8 +111,9 @@ class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
             )
             remaining_devices = await self.remnawave.delete_device(remna_id, data.hwid)
             await self.remnawave.drop_connections(remna_id)
-            current_subscription.device_single_reset_at = datetime_now()
-            await self.subscription_dao.update(current_subscription)
+            if is_self:
+                current_subscription.device_single_reset_at = datetime_now()
+                await self.subscription_dao.update(current_subscription)
             await self.uow.commit()
 
         logger.info(f"{actor.log} Deleted device '{data.hwid}' for user_id '{data.user_id}'")
@@ -176,6 +187,7 @@ class ResetUserTraffic(Interactor[int, None]):
         target_user = await self.user_dao.get_by_id(user_id)
         if not target_user:
             raise ValueError(f"User '{user_id}' not found")
+        _ensure_can_manage(actor, target_user)
 
         subscription = await self.subscription_dao.get_current(target_user.id)
         if not subscription:
@@ -261,6 +273,7 @@ class ReissueUserSubscription(Interactor[int, None]):
         target_user = await self.user_dao.get_by_id(user_id)
         if not target_user:
             raise ValueError(f"User '{user_id}' not found")
+        _ensure_can_manage(actor, target_user)
 
         current_subscription = await self.subscription_dao.get_current(target_user.id)
 

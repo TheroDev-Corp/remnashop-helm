@@ -362,10 +362,16 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
                 return
 
             elif new_status == TransactionStatus.COMPLETED:
+                # CANCELED is allowed: stale PENDING rows are auto-canceled after 30 minutes,
+                # but a gateway may confirm the payment later (slow chain/bank callbacks).
                 updated = await self.transaction_dao.transition_status(
                     payment_id,
                     TransactionStatus.COMPLETED,
-                    (TransactionStatus.PENDING, TransactionStatus.FAILED),
+                    (
+                        TransactionStatus.PENDING,
+                        TransactionStatus.FAILED,
+                        TransactionStatus.CANCELED,
+                    ),
                 )
                 if not updated:
                     logger.warning(

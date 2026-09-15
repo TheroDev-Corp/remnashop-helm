@@ -162,6 +162,29 @@ class RemnaWebhookService:
             )
             return
 
+        if (
+            event != RemnaUserEvent.DELETED
+            and current_subscription.user_remna_id > 0
+            and current_subscription.user_remna_id != remna_user.id
+        ):
+            # E.g. an old duplicate panel user with the same telegramId: its status must not
+            # produce limited/expired/... notices about the user's real subscription.
+            logger.warning(
+                f"RemnaUser '{remna_user.id}' is not bound to the current subscription "
+                f"'{current_subscription.id}' of {user.log} "
+                f"(bound to '{current_subscription.user_remna_id}'), event '{event}' skipped"
+            )
+            return
+
+        await self._dispatch_user_event(user, current_subscription, event, remna_user)
+
+    async def _dispatch_user_event(
+        self,
+        user: UserDto,
+        current_subscription: SubscriptionDto,
+        event: str,
+        remna_user: RemnaUserDto,
+    ) -> None:
         if event == RemnaUserEvent.DELETED:
             logger.debug(f"Executing deletion for RemnaUser '{remna_user.telegram_id}'")
             await self._process_delete_subscription(user, remna_user)

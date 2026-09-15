@@ -28,6 +28,7 @@ def downgrade() -> None:
         "user_remna_id",
         existing_type=sa.BigInteger(),
         type_=sa.UUID(),
-        postgresql_using="user_remna_id::text::uuid",
+        # Integer panel ids are not valid uuid text: encode them as zero-padded hex instead.
+        postgresql_using="lpad(to_hex(user_remna_id), 32, '0')::uuid",
         existing_nullable=False,
     )

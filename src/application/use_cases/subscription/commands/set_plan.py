@@ -7,7 +7,10 @@ from src.application.common.dao import PlanDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, SubscriptionDto, UserDto
-from src.application.use_cases.subscription.commands.management import resolve_bindable_remna_id
+from src.application.use_cases.subscription.commands.management import (
+    ensure_can_edit_subscription,
+    resolve_bindable_remna_id,
+)
 from src.core.enums import SubscriptionStatus
 
 
@@ -40,6 +43,7 @@ class SetUserSubscription(Interactor[SetUserSubscriptionDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
 
             plan = await self.plan_dao.get_by_id(data.plan_id)
             if not plan:

@@ -92,7 +92,9 @@ async def test_profile_never_heals_without_resolved_owner(deps, sample_user_dto)
     use_case, _, sub_dao, remnawave = deps
     remnawave.resolve_user.return_value = None
 
-    with pytest.raises(ValueError):
-        await use_case(SYSTEM, sample_user_dto.id)
+    # The window still renders (remna_user=None) so the admin can delete the orphaned subscription.
+    result = await use_case(SYSTEM, sample_user_dto.id)
 
+    assert result.remna_user is None
+    assert result.formatted_internal_squads is None
     sub_dao.update.assert_not_awaited()

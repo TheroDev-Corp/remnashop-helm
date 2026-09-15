@@ -11,7 +11,7 @@ from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import RequirementSettingsDto, SettingsDto, SubscriptionDto, UserDto
 from src.core.enums import SubscriptionStatus
-from src.core.exceptions import RemnaUserBindingError
+from src.core.exceptions import PermissionDeniedError, RemnaUserBindingError
 from src.core.utils.time import datetime_now
 
 
@@ -63,6 +63,13 @@ async def resolve_bindable_remna_id(
     return remna_user.id
 
 
+def ensure_can_edit_subscription(actor: UserDto, target_user: UserDto) -> None:
+    """Refuse editing another user's subscription unless the actor's role is strictly higher."""
+    if actor.id != target_user.id and not actor.role > target_user.role:
+        logger.warning(f"{actor.log} denied editing subscription of {target_user.log}")
+        raise PermissionDeniedError()
+
+
 class ToggleSubscriptionStatus(Interactor[int, SubscriptionStatus]):
     required_permission = Permission.USER_SUBSCRIPTION_EDITOR
 
@@ -82,6 +89,7 @@ class ToggleSubscriptionStatus(Interactor[int, SubscriptionStatus]):
         target_user = await self.user_dao.get_by_id(user_id)
         if not target_user:
             raise ValueError(f"User '{user_id}' not found")
+        ensure_can_edit_subscription(actor, target_user)
         subscription = await self.subscription_dao.get_current(target_user.id)
 
         if not subscription:
@@ -139,6 +147,7 @@ class DeleteSubscription(Interactor[int, None]):
         target_user = await self.user_dao.get_by_id(user_id)
         if not target_user:
             raise ValueError(f"User '{user_id}' not found")
+        ensure_can_edit_subscription(actor, target_user)
 
         subscription = await self.subscription_dao.get_current(target_user.id)
 
@@ -198,6 +207,7 @@ class UpdateTrafficLimit(Interactor[UpdateTrafficLimitDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
 
             subscription = await self.subscription_dao.get_current(target_user.id)
             if not subscription:
@@ -248,6 +258,7 @@ class UpdateDeviceLimit(Interactor[UpdateDeviceLimitDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
 
             subscription = await self.subscription_dao.get_current(target_user.id)
             if not subscription:
@@ -297,6 +308,7 @@ class ToggleInternalSquad(Interactor[ToggleInternalSquadDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
             subscription = await self.subscription_dao.get_current(target_user.id)
             if not subscription:
                 raise ValueError(f"Subscription for '{target_user.remna_name}' not found")
@@ -353,6 +365,7 @@ class ToggleExternalSquad(Interactor[ToggleExternalSquadDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
             subscription = await self.subscription_dao.get_current(target_user.id)
             if not subscription:
                 raise ValueError(f"Subscription for '{target_user.remna_name}' not found")
@@ -410,6 +423,7 @@ class AddSubscriptionDuration(Interactor[AddSubscriptionDurationDto, None]):
 
             if not target_user or not subscription:
                 raise ValueError(f"Subscription data for user_id '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
 
             new_expire = subscription.expire_at + timedelta(days=data.days)
 

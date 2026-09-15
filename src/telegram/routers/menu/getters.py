@@ -91,7 +91,10 @@ async def menu_getter(
                 trial_price_str = (
                     f"{raw_price.normalize():f} {currency.symbol}" if not trial_is_free else ""
                 )
-            data["trial_available"] = menu_data.is_trial_available and menu_data.available_trial
+            # Fluent selectors need a plain bool, not a PlanDto.
+            data["trial_available"] = bool(
+                menu_data.is_trial_available and menu_data.available_trial
+            )
             data["trial_is_free"] = trial_is_free
             data["trial_price"] = trial_price_str
             return data

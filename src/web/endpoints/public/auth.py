@@ -1,6 +1,7 @@
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from redis.asyncio import Redis
 
 from src.application.common.dao.auth import AuthSessionDao
 from src.application.dto import UserDto
@@ -52,6 +53,9 @@ from ._common import (
     issue_session,
     set_auth_cookies,
 )
+
+EMAIL_CONFIRM_ATTEMPTS_KEY_PREFIX = "email_confirm_attempts:"
+EMAIL_CONFIRM_MAX_ATTEMPTS = 5
 
 router = APIRouter(prefix="/auth", tags=["Public - Auth"])
 
@@ -136,9 +140,10 @@ async def refresh_access_token(
 async def logout(
     request: Request,
     response: Response,
-    user: CurrentUser,
     auth_session: FromDishka[AuthSessionDao],
 ) -> LogoutResponse:
+    # No CurrentUser: logout must work after the short-lived access token expired, otherwise
+    # the refresh token stays valid and silently restores the session.
     refresh_token = request.cookies.get("refresh_token")
     if refresh_token:
         await auth_session.revoke_refresh_token(refresh_token)
@@ -257,7 +262,26 @@ async def request_email_verification_code(
 async def confirm_email_verification(
     body: ConfirmEmailVerificationRequest,
     user: CurrentUser,
+    config: FromDishka[AppConfig],
+    redis: FromDishka[Redis],
     confirm_verification: FromDishka[ConfirmEmailVerification],
 ) -> ConfirmEmailVerificationResponse:
-    result = await confirm_verification(user, ConfirmEmailVerificationDto(code=body.code))
+    # A 6-digit code is brute-forceable without a limit: allow a few wrong attempts per code TTL.
+    attempts_key = f"{EMAIL_CONFIRM_ATTEMPTS_KEY_PREFIX}{user.id}"
+    attempts = int(await redis.get(attempts_key) or 0)
+    if attempts >= EMAIL_CONFIRM_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many verification attempts, try again later",
+        )
+
+    try:
+        result = await confirm_verification(user, ConfirmEmailVerificationDto(code=body.code))
+    except HTTPException as e:
+        if e.status_code == status.HTTP_400_BAD_REQUEST and e.detail == "Invalid verification code":
+            await redis.incr(attempts_key)
+            await redis.expire(attempts_key, config.email.verification_code_ttl_minutes * 60)
+        raise
+
+    await redis.delete(attempts_key)
     return ConfirmEmailVerificationResponse(success=True, email=result.email)

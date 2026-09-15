@@ -1,3 +1,5 @@
+from dataclasses import asdict
+from typing import Any, Union
 from uuid import UUID
 
 from adaptix import Retort
@@ -17,6 +19,18 @@ from src.infrastructure.redis.keys import SyncBotRunningKey, SyncPanelRunningKey
 from src.infrastructure.taskiq.broker import broker
 
 
+def build_create_user_request(
+    user: Union[ExportedUserDto, dict[str, Any]],
+    active_internal_squads: list[UUID],
+) -> CreateUserRequestDto:
+    # The taskiq worker parses arguments by annotation, so users arrive as ExportedUserDto
+    # dataclasses; pydantic's model_validate only accepts a dict (from_attributes is off).
+    data = dict(user) if isinstance(user, dict) else asdict(user)
+    created_user = CreateUserRequestDto.model_validate(data)
+    created_user.active_internal_squads = active_internal_squads
+    return created_user
+
+
 @broker.task
 @inject(patch_module=True)
 async def import_exported_users_task(
@@ -31,8 +45,7 @@ async def import_exported_users_task(
 
     for user in imported_users:
         try:
-            created_user = CreateUserRequestDto.model_validate(user)
-            created_user.active_internal_squads = active_internal_squads
+            created_user = build_create_user_request(user, active_internal_squads)
             await remnawave_sdk.users.create_user(created_user)
             success_count += 1
         except BadRequestError as error:

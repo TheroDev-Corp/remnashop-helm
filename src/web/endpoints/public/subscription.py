@@ -263,10 +263,20 @@ async def activate_promocode_web(
     return PromocodeActivateResponse(success=True, reward_type=promo.reward_type.value)
 
 
+async def _assert_no_current_subscription(user: UserDto, subscription_dao: SubscriptionDao) -> None:
+    # The bot offers the trial only without a current subscription; a trial would replace it.
+    if await subscription_dao.get_current(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Trial is not available with an existing subscription",
+        )
+
+
 @router.post("/trial", response_model=TrialActivateResponse)
 @inject
 async def activate_trial_web(
     user: CurrentUser,
+    subscription_dao: FromDishka[SubscriptionDao],
     settings_dao: FromDishka[SettingsDao],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
     pricing_service: FromDishka[PricingService],
@@ -274,6 +284,7 @@ async def activate_trial_web(
     activate_trial: FromDishka[ActivateTrialSubscription],
 ) -> TrialActivateResponse:
     _assert_web_purchase_email_verified(user)
+    await _assert_no_current_subscription(user, subscription_dao)
 
     plan = await get_available_trial.system(user)
     if not plan or not plan.durations:
@@ -338,6 +349,7 @@ async def activate_trial_web(
 async def purchase_trial_web(
     body: TrialPurchaseRequest,
     user: CurrentUser,
+    subscription_dao: FromDishka[SubscriptionDao],
     settings_dao: FromDishka[SettingsDao],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
     pricing_service: FromDishka[PricingService],
@@ -346,6 +358,7 @@ async def purchase_trial_web(
     process_payment: FromDishka[ProcessPayment],
 ) -> PaymentInitResponse:
     _assert_web_purchase_email_verified(user)
+    await _assert_no_current_subscription(user, subscription_dao)
     await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao)
 
     plan = await get_available_trial.system(user)
@@ -493,6 +506,12 @@ async def extend_subscription(
     current_subscription = await subscription_dao.get_current(user.id)
     if not current_subscription:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    if current_subscription.is_unlimited:
+        # RENEW adds days to expire_at: an unlimited subscription would gain nothing.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unlimited subscription cannot be extended",
+        )
 
     available_plans = await get_available_plans.system(user)
     matched_plan = await match_plan.system(

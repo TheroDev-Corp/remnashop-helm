@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -12,6 +12,7 @@ from src.application.dto import UserDto
 from src.application.use_cases.importer.dto import ExportedUserDto
 from src.core.constants import IMPORTED_TAG, REMNASHOP_PREFIX, UNLIMITED_EXPIRE_YEAR
 from src.core.enums import SubscriptionStatus
+from src.core.utils.time import datetime_now
 
 
 class ExportUsersFromXui(Interactor[Path, list[ExportedUserDto]]):
@@ -65,11 +66,14 @@ class ExportUsersFromXui(Interactor[Path, list[ExportedUserDto]]):
             return None
 
         telegram_id = int(match.group(0))
-        expire_at = (
-            datetime.fromtimestamp(user.get("expiryTime", 0) / 1000, tz=timezone.utc)
-            if user.get("expiryTime")
-            else datetime(UNLIMITED_EXPIRE_YEAR, 1, 1, tzinfo=timezone.utc)
-        )
+        expiry_time = user.get("expiryTime") or 0
+        if expiry_time > 0:
+            expire_at = datetime.fromtimestamp(expiry_time / 1000, tz=timezone.utc)
+        elif expiry_time < 0:
+            # 3X-UI delayed start: the period (in ms) begins at first connection.
+            expire_at = datetime_now() + timedelta(milliseconds=abs(expiry_time))
+        else:
+            expire_at = datetime(UNLIMITED_EXPIRE_YEAR, 1, 1, tzinfo=timezone.utc)
 
         return ExportedUserDto(
             username=f"{REMNASHOP_PREFIX}{telegram_id}",

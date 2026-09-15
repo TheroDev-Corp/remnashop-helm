@@ -1,4 +1,3 @@
-import html
 from typing import Any, Optional
 from uuid import UUID
 
@@ -198,7 +197,7 @@ async def on_content_input(
     _update_payload(
         dialog_manager,
         retort,
-        i18n_kwargs={"content": html.unescape(message.html_text)},
+        i18n_kwargs={"content": message.html_text},
         media_type=media_type,
         media=retort.dump(MediaDescriptorDto(kind="file_id", value=file_id)) if file_id else None,
     )

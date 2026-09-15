@@ -144,7 +144,10 @@ class UserDaoImpl(UserDao):
         return None
 
     async def get_all(self, limit: Optional[int] = None, offset: int = 0) -> list[UserDto]:
-        stmt = select(User).limit(limit).offset(offset) if limit else select(User).offset(offset)
+        # A deterministic order is required for LIMIT/OFFSET paging (sync walks all users).
+        stmt = select(User).order_by(User.id).offset(offset)
+        if limit:
+            stmt = stmt.limit(limit)
         result = await self.session.scalars(stmt)
         db_users = cast(list, result.all())
 

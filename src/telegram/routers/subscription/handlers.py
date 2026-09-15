@@ -380,6 +380,11 @@ async def on_duration_select(
         return
     settings = await settings_dao.get()
     gateways = await payment_gateway_dao.get_active()
+    if not gateways:
+        # Reachable through the plan deeplink, which skips the gateway check of the menu.
+        logger.warning(f"{user.log} No active payment gateways for duration selection")
+        await notifier.notify_user(user, i18n_key="ntf-subscription.gateways-unavailable")
+        return
     currency = settings.default_currency
     price = pricing_service.calculate(
         user,

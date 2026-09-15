@@ -265,8 +265,14 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             subscription.expire_at = updated.expire_at
             subscription.url = updated.subscription_url
             subscription.plan_snapshot = plan
+            # The plan replaces a possible trial: keep trial-only logic (channel guard, renew
+            # routing, referral rewards) away from it.
+            subscription.is_trial = plan.is_trial
+            subscription.disabled_by_channel_leave = False
             logger.info(f"{actor.log} SUBSCRIPTION reward applied")
             return _PendingReward(subscription_update=subscription)
+        # create_user may PATCH an existing owned panel user: refuse a binding conflict first.
+        await resolve_bindable_remna_id(self.remnawave, self.subscription_dao, user, None)
         created = await self.remnawave.create_user(user=user, plan=plan)
         new_sub = SubscriptionDto(
             user_remna_id=created.id,
@@ -281,8 +287,11 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             url=created.subscription_url,
             plan_snapshot=plan,
         )
+        # As in PurchaseSubscription: a granted subscription consumes the trial, otherwise the
+        # trial could later overwrite the promo plan on the same panel user.
+        user.is_trial_available = False
         logger.info(f"{actor.log} SUBSCRIPTION reward applied")
-        return _PendingReward(subscription_create=new_sub)
+        return _PendingReward(subscription_create=new_sub, user_update=user)
 
     def _apply_personal_discount(
         self,

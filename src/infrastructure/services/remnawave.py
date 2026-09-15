@@ -26,7 +26,7 @@ from src.application.dto import (
     SubscriptionDto,
     UserDto,
 )
-from src.core.constants import REMNAWAVE_MIN_VERSION
+from src.core.constants import REMNASHOP_PREFIX, REMNAWAVE_MIN_VERSION, WEB_PREFIX
 from src.core.enums import SubscriptionStatus
 from src.core.exceptions import RemnaUserBindingError
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
@@ -41,6 +41,11 @@ _FILTER_PAGE_SIZE = 100
 _STREAM_PAGE_SIZE = 250
 # ERRORS.USER_USERNAME_ALREADY_EXISTS in libs/contract/constants/errors/errors.ts (HTTP 400).
 _USERNAME_ALREADY_EXISTS_CODE = "A019"
+
+
+def _web_remna_name(user: UserDto) -> str:
+    """Panel username generated while the bot user had no telegram_id (see UserDto.remna_name)."""
+    return f"{REMNASHOP_PREFIX}{WEB_PREFIX}{user.id}"
 
 
 def _not_found(id: Union[int, str]) -> NotFoundError:
@@ -159,8 +164,9 @@ class RemnawaveImpl(Remnawave):
         if user.telegram_id:
             if remna_user.telegram_id is not None:
                 return remna_user.telegram_id == user.telegram_id
-            # Panel user without telegramId: only accept the username this bot generated for us.
-            return remna_user.username == user.remna_name
+            # Panel user without telegramId: only accept a username this bot generated for us —
+            # `rs_<tg>`, or `rs_web_<id>` created before the web user linked Telegram.
+            return remna_user.username in (user.remna_name, _web_remna_name(user))
 
         # Bot user without telegram_id (web/imported): never take a Telegram-bound panel user, and
         # require a positive identity match so another Telegram-less panel user is not taken.
@@ -204,9 +210,18 @@ class RemnawaveImpl(Remnawave):
                         return candidate
                 return candidates[0]
 
-        by_username = await self.get_user_by_username(user.remna_name)
-        if by_username and self.is_owned_by(by_username, user):
-            return by_username
+        return await self._resolve_by_username(user)
+
+    async def _resolve_by_username(self, user: UserDto) -> Optional[UserResponseDto]:
+        usernames = [user.remna_name]
+        if user.telegram_id and user.id:
+            # A web user who linked Telegram keeps the panel user created as `rs_web_<id>`.
+            usernames.append(_web_remna_name(user))
+
+        for username in usernames:
+            by_username = await self.get_user_by_username(username)
+            if by_username and self.is_owned_by(by_username, user):
+                return by_username
 
         return None
 

@@ -61,6 +61,37 @@ def _normalize_webhook_payload(payload_dict: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+async def _dispatch_webhook_event(
+    payload: WebhookPayloadDto,
+    remna_webhook_service: RemnaWebhookService,
+) -> None:
+    if WebhookUtility.is_user_event(payload.event):
+        user = cast(UserDto, WebhookUtility.get_typed_data(payload))
+        await remna_webhook_service.handle_user_event(payload.event, user)
+
+    elif WebhookUtility.is_user_hwid_devices_event(payload.event):
+        event = cast(UserHwidDeviceEventDto, WebhookUtility.get_typed_data(payload))
+        await remna_webhook_service.handle_device_event(
+            payload.event,
+            event.user,
+            event.hwid_user_device,
+        )
+
+    elif WebhookUtility.is_node_event(payload.event):
+        node = cast(NodeDto, WebhookUtility.get_typed_data(payload))
+        await remna_webhook_service.handle_node_event(payload.event, node)
+
+    elif WebhookUtility.is_torrent_blocker_event(payload.event):
+        report = cast(TorrentBlockerReportDto, WebhookUtility.get_typed_data(payload))
+        await remna_webhook_service.handle_torrent_blocker_event(report)
+
+    elif payload.event.startswith("crm.") or payload.event.startswith("service."):
+        logger.info(f"Received Remnawave system/crm event '{payload.event}', acknowledged")
+
+    else:
+        logger.warning(f"Unhandled Remnawave event type '{payload.event}'")
+
+
 async def _process_remnawave_webhook(
     request: Request,
     config: AppConfig,
@@ -94,32 +125,7 @@ async def _process_remnawave_webhook(
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        if WebhookUtility.is_user_event(payload.event):
-            user = cast(UserDto, WebhookUtility.get_typed_data(payload))
-            await remna_webhook_service.handle_user_event(payload.event, user)
-
-        elif WebhookUtility.is_user_hwid_devices_event(payload.event):
-            event = cast(UserHwidDeviceEventDto, WebhookUtility.get_typed_data(payload))
-            await remna_webhook_service.handle_device_event(
-                payload.event,
-                event.user,
-                event.hwid_user_device,
-            )
-
-        elif WebhookUtility.is_node_event(payload.event):
-            node = cast(NodeDto, WebhookUtility.get_typed_data(payload))
-            await remna_webhook_service.handle_node_event(payload.event, node)
-
-        elif WebhookUtility.is_torrent_blocker_event(payload.event):
-            report = cast(TorrentBlockerReportDto, WebhookUtility.get_typed_data(payload))
-            await remna_webhook_service.handle_torrent_blocker_event(report)
-
-        elif payload.event.startswith("crm.") or payload.event.startswith("service."):
-            logger.info(f"Received Remnawave system/crm event '{payload.event}', acknowledged")
-
-        else:
-            logger.warning(f"Unhandled Remnawave event type '{payload.event}'")
-
+        await _dispatch_webhook_event(payload, remna_webhook_service)
     except Exception as e:
         logger.exception(f"Failed to process Remnawave webhook due to '{e}'")
         error_event = ErrorEvent(**config.build.data, exception=e)

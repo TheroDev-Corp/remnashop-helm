@@ -126,13 +126,13 @@ async def subscription_getter(
         "is_active": subscription.is_active,
         "has_devices_limit": subscription.has_devices_limit,
         "has_traffic_limit": subscription.has_traffic_limit,
-        "url": remna_user.subscription_url,
+        "url": remna_user.subscription_url if remna_user else (subscription.url or ""),
         #
         "shop_user_id": target_user_id,
         "subscription_id": subscription.user_remna_id,
         "subscription_status": subscription.current_status,
         "traffic_used": i18n_format_bytes_to_unit(
-            remna_user.used_traffic_bytes,
+            remna_user.used_traffic_bytes if remna_user else 0,
             min_unit=ByteUnitKey.MEGABYTE,
         ),
         "traffic_limit": i18n_format_traffic_limit(subscription.traffic_limit),
@@ -143,12 +143,12 @@ async def subscription_getter(
         "external_squad": user_profile_subscription.formatted_external_squad or False,
         "first_connected_at": (
             remna_user.first_connected_at.strftime(DATETIME_VIEW_FORMAT)
-            if remna_user.first_connected_at
+            if remna_user and remna_user.first_connected_at
             else False
         ),
         "last_connected_at": (
             remna_user.user_traffic.online_at.strftime(DATETIME_VIEW_FORMAT)
-            if remna_user.user_traffic.online_at
+            if remna_user and remna_user.user_traffic.online_at
             else False
         ),
         "node_name": user_profile_subscription.last_node_name,

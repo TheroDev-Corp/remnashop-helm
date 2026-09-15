@@ -72,7 +72,9 @@ class WebhookService:
 
         return is_new
 
-    def _is_new_error(self, error_time: datetime, tolerance: int = 1) -> bool:
+    # Checked once at startup, after set_webhook: an error is necessarily older than the call, so
+    # report errors from the last few minutes (e.g. deliveries failing during the restart).
+    def _is_new_error(self, error_time: datetime, tolerance: int = 300) -> bool:
         current_time = datetime_now()
         time_difference = current_time - error_time
         return time_difference <= timedelta(seconds=tolerance)

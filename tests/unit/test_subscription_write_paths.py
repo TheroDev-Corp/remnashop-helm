@@ -28,6 +28,8 @@ from src.application.use_cases.subscription.commands.management import (
     UpdateTrafficLimitDto,
 )
 from src.application.use_cases.subscription.commands.purchase import (
+    ActivateTrialSubscription,
+    ActivateTrialSubscriptionDto,
     PurchaseSubscription,
     PurchaseSubscriptionDto,
 )
@@ -490,6 +492,86 @@ async def test_binding_conflict_blocks_panel_mutation(
     sub_dao.update_status.assert_not_awaited()
     sub_dao.create.assert_not_awaited()
     uow.commit.assert_not_awaited()
+
+
+# --- create_user callers check the binding before the panel is mutated ----------------------
+
+
+def _create_user_cases(sample_user_dto, sample_plan_dto):
+    def new_purchase(uow, user_dao, sub_dao, remnawave):
+        transaction = MagicMock(plan_snapshot=sample_plan_dto, purchase_type=PurchaseType.NEW)
+        return PurchaseSubscription(uow, user_dao, sub_dao, remnawave).system(
+            PurchaseSubscriptionDto(
+                user=sample_user_dto, transaction=transaction, subscription=None
+            )
+        )
+
+    def trial(uow, user_dao, sub_dao, remnawave):
+        sample_user_dto.is_trial_available = True
+        sub_dao.get_current.return_value = None
+        event_publisher = MagicMock()
+        event_publisher.publish = AsyncMock()
+        return ActivateTrialSubscription(uow, user_dao, sub_dao, remnawave, event_publisher).system(
+            ActivateTrialSubscriptionDto(user=sample_user_dto, plan=sample_plan_dto)
+        )
+
+    def promocode_subscription(uow, user_dao, sub_dao, remnawave):
+        sub_dao.get_current.return_value = None
+        promo = MagicMock(
+            reward_type=PromocodeRewardType.SUBSCRIPTION,
+            reward=None,
+            id=1,
+            code="X",
+            plan_snapshot={"name": "plan"},
+        )
+        use_case = _promocode_use_case(uow, user_dao, sub_dao, remnawave, promo, sample_plan_dto)
+        return use_case.system(ActivatePromocodeDto(code="X", user=sample_user_dto))
+
+    return {"new": new_purchase, "trial": trial, "promocode_subscription": promocode_subscription}
+
+
+CREATE_USER_CASES = ["new", "trial", "promocode_subscription"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", CREATE_USER_CASES)
+async def test_create_user_flows_block_on_binding_conflict(
+    uow, user_dao, sub_dao, remnawave, sample_user_dto, sample_plan_dto, case
+):
+    remnawave.resolve_user.return_value = _remna_user(OWNED_ID)
+    sub_dao.ensure_remna_id_available.side_effect = RemnaUserBindingError("bound to user 2")
+    run = _create_user_cases(sample_user_dto, sample_plan_dto)[case]
+
+    with pytest.raises(RemnaUserBindingError):
+        await run(uow, user_dao, sub_dao, remnawave)
+
+    remnawave.resolve_user.assert_awaited_once_with(sample_user_dto, None)
+    sub_dao.ensure_remna_id_available.assert_awaited_once_with(OWNED_ID, sample_user_dto.id)
+    remnawave.create_user.assert_not_awaited()
+    remnawave.update_user.assert_not_awaited()
+    sub_dao.create.assert_not_awaited()
+    uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", CREATE_USER_CASES)
+@pytest.mark.parametrize("owned", [True, False])
+async def test_create_user_flows_persist_created_id(
+    uow, user_dao, sub_dao, remnawave, sample_user_dto, sample_plan_dto, case, owned
+):
+    remnawave.resolve_user.return_value = _remna_user(OWNED_ID) if owned else None
+    remnawave.create_user.return_value = _remna_user(OWNED_ID)
+    run = _create_user_cases(sample_user_dto, sample_plan_dto)[case]
+
+    await run(uow, user_dao, sub_dao, remnawave)
+
+    if owned:
+        sub_dao.ensure_remna_id_available.assert_awaited_once_with(OWNED_ID, sample_user_dto.id)
+    else:
+        sub_dao.ensure_remna_id_available.assert_not_awaited()
+    remnawave.create_user.assert_awaited_once()
+    assert sub_dao.create.await_args.kwargs["subscription"].user_remna_id == OWNED_ID
+    uow.commit.assert_awaited_once()
 
 
 # --- SetUserSubscription --------------------------------------------------------------------
