@@ -9,6 +9,7 @@ from src.application.common.dao import SubscriptionDao, UserDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, SubscriptionDto, TransactionDto, UserDto
 from src.application.events import TrialActivatedEvent
+from src.application.use_cases.subscription.commands.management import resolve_bindable_remna_id
 from src.core.enums import PurchaseType, SubscriptionStatus
 from src.core.exceptions import TrialNotAvailableError
 from src.core.types import RemnaUserDto
@@ -176,22 +177,18 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                 subscription.internal_squads = plan.internal_squads
                 subscription.external_squad = plan.external_squad
 
-                if subscription.user_remna_id <= 0 and user.telegram_id:
-                    existing_users = await self.remnawave.get_users_by_telegram_id(
-                        user.telegram_id
-                    )
-                    if existing_users:
-                        subscription.user_remna_id = existing_users[0].id
-
+                # update_user re-resolves the owned panel user (or creates one) and may return
+                # a different ID than the stored one: always persist what it returns.
+                remna_id = await resolve_bindable_remna_id(
+                    self.remnawave, self.subscription_dao, user, subscription.user_remna_id
+                )
                 remna_user = await self.remnawave.update_user(
                     user=user,
-                    id=subscription.user_remna_id,
+                    id=remna_id,
                     subscription=subscription,
                     reset_traffic=True,
                 )
-                if remna_user and remna_user.id != subscription.user_remna_id:
-                    subscription.user_remna_id = remna_user.id
-
+                subscription.user_remna_id = remna_user.id
                 subscription.plan_snapshot = plan
                 await self.subscription_dao.update(subscription)
                 if user.purchase_discount:
@@ -207,31 +204,22 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                         f"No subscription found for change for user '{user.remna_name}'"
                     )
 
+                # Panel first: if it fails, the old subscription stays untouched. The binding is
+                # checked before that, so a DB refusal cannot follow a panel change.
+                remna_id = await resolve_bindable_remna_id(
+                    self.remnawave, self.subscription_dao, user, subscription.user_remna_id
+                )
+                updated_user = await self.remnawave.update_user(
+                    user=user,
+                    id=remna_id,
+                    plan=plan,
+                    reset_traffic=True,
+                )
+
                 await self.subscription_dao.update_status(
                     subscription_id=subscription.id,
                     status=SubscriptionStatus.DELETED,
                 )
-
-                if subscription.user_remna_id <= 0 and user.telegram_id:
-                    existing_users = await self.remnawave.get_users_by_telegram_id(
-                        user.telegram_id
-                    )
-                    remna_id = existing_users[0].id if existing_users else 0
-                else:
-                    remna_id = subscription.user_remna_id
-
-                if remna_id > 0:
-                    updated_user = await self.remnawave.update_user(
-                        user=user,
-                        id=remna_id,
-                        plan=plan,
-                        reset_traffic=True,
-                    )
-                else:
-                    updated_user = await self.remnawave.create_user(
-                        user=user,
-                        plan=plan,
-                    )
 
                 new_sub = self._build_subscription_dto(updated_user, plan)
                 await self.subscription_dao.create(

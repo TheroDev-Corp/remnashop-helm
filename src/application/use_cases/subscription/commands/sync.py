@@ -7,7 +7,7 @@ from src.application.common.uow import UnitOfWork
 from src.application.dto import RemnaSubscriptionDto, UserDto
 from src.application.use_cases.remnawave.commands.synchronization import (
     SyncRemnaUser,
-    SyncRemnaUserDto,
+    bind_subscription_to_remna_user,
 )
 from src.application.use_cases.subscription.queries.match import (
     MatchSubscription,
@@ -39,22 +39,10 @@ class CheckSubscriptionSyncState(Interactor[int, bool]):
             raise ValueError(f"User '{user_id}' not found")
 
         bot_sub = await self.subscription_dao.get_current(target_user.id)
-        remna_user = None
-
-        if target_user.telegram_id:
-            remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
-            if remna_users:
-                remna_user = remna_users[0]
-
-        if not remna_user and bot_sub and bot_sub.user_remna_id > 0:
-            remna_user = await self.remnawave.get_user_by_id(bot_sub.user_remna_id)
-            if (
-                remna_user
-                and target_user.telegram_id
-                and remna_user.telegram_id
-                and remna_user.telegram_id != target_user.telegram_id
-            ):
-                remna_user = None
+        remna_user = await self.remnawave.resolve_user(
+            target_user,
+            bot_sub.user_remna_id if bot_sub else None,
+        )
 
         remna_sub = RemnaSubscriptionDto.from_remna_user(remna_user) if remna_user else None
 
@@ -93,22 +81,13 @@ class SyncSubscriptionFromRemnawave(Interactor[int, None]):
                 raise ValueError(f"User '{user_id}' not found")
 
             subscription = await self.subscription_dao.get_current(target_user.id)
-            remna_user = None
 
-            if target_user.telegram_id:
-                remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
-                if remna_users:
-                    remna_user = remna_users[0]
-
-            if not remna_user and subscription and subscription.user_remna_id > 0:
-                remna_user = await self.remnawave.get_user_by_id(subscription.user_remna_id)
-                if (
-                    remna_user
-                    and target_user.telegram_id
-                    and remna_user.telegram_id
-                    and remna_user.telegram_id != target_user.telegram_id
-                ):
-                    remna_user = None
+            # Panel/transport errors propagate from resolve_user: only a verified "no panel user
+            # owned by this user" may lead to deleting the local subscription.
+            remna_user = await self.remnawave.resolve_user(
+                target_user,
+                subscription.user_remna_id if subscription else None,
+            )
 
             if not remna_user:
                 if subscription:
@@ -132,8 +111,7 @@ class SyncSubscriptionFromRemnawave(Interactor[int, None]):
                 logger.info(f"{actor.log} Importing subscription from panel for user '{user_id}'")
                 await self.sync_remna_user._import_subscription(target_user.id, remna_subscription)
             else:
-                if subscription.user_remna_id != remna_user.id:
-                    subscription.user_remna_id = remna_user.id
+                # apply_sync copies the (resolve_user-verified) panel id into user_remna_id.
                 await self.sync_remna_user._update_subscription(subscription, remna_subscription)
 
             await self.uow.commit()
@@ -149,13 +127,11 @@ class SyncSubscriptionFromRemnashop(Interactor[int, None]):
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
         remnawave: Remnawave,
-        sync_remna_user: SyncRemnaUser,
     ) -> None:
         self.uow = uow
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
-        self.sync_remna_user = sync_remna_user
 
     async def _execute(self, actor: UserDto, user_id: int) -> None:
         async with self.uow:
@@ -166,38 +142,43 @@ class SyncSubscriptionFromRemnashop(Interactor[int, None]):
             subscription = await self.subscription_dao.get_current(target_user.id)
 
             if not subscription:
-                if target_user.telegram_id:
-                    remna_users = await self.remnawave.get_users_by_telegram_id(
-                        target_user.telegram_id
+                remna_user = await self.remnawave.resolve_user(target_user)
+                if remna_user:
+                    await self.remnawave.delete_user(remna_user.id)
+                    logger.info(
+                        f"{actor.log} Deleted user '{remna_user.id}' from remnapy "
+                        f"due to missing local subscription"
                     )
-                    if remna_users:
-                        await self.remnawave.delete_user(remna_users[0].id)
-                        logger.info(
-                            f"{actor.log} Deleted user '{remna_users[0].id}' from remnapy "
-                            f"due to missing local subscription"
-                        )
             else:
-                remna_user = await self.remnawave.get_user_by_id(subscription.user_remna_id)
+                remna_user = await self.remnawave.resolve_user(
+                    target_user,
+                    subscription.user_remna_id,
+                )
 
                 if remna_user:
-                    await self.remnawave.update_user(
+                    # Check the binding before mutating the panel, not after.
+                    await self.subscription_dao.ensure_remna_id_available(
+                        remna_user.id, target_user.id
+                    )
+                    result = await self.remnawave.update_user(
                         user=target_user,
-                        id=subscription.user_remna_id,
+                        id=remna_user.id,
                         subscription=subscription,
                     )
                     logger.info(
                         f"{actor.log} Updated user '{user_id}' in Remnawave with local data"
                     )
                 else:
-                    created_user = await self.remnawave.create_user(
+                    result = await self.remnawave.create_user(
                         user=target_user,
                         subscription=subscription,
-                    )
-                    await self.sync_remna_user.system(
-                        SyncRemnaUserDto(created_user, creating=False)
                     )
                     logger.info(
                         f"{actor.log} Recreated user '{user_id}' in Remnawave with local data"
                     )
+
+                # Bind to the panel user returned for *this* bot user (update_user may re-resolve).
+                if bind_subscription_to_remna_user(subscription, result):
+                    await self.subscription_dao.update(subscription)
 
             await self.uow.commit()

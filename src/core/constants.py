@@ -29,7 +29,7 @@ URL_PATTERN: Pattern[str] = re.compile(r"^https://\S+$")
 USERNAME_PATTERN: Pattern[str] = re.compile(r"^@[a-zA-Z0-9_]{5,32}$")
 INVITE_LINK_PATTERN: Pattern[str] = re.compile(r"^https://t\.me/(\+|joinchat/)[A-Za-z0-9_\-]+")
 
-REMNAWAVE_MIN_VERSION: Final[Version] = Version("2.7.0")
+REMNAWAVE_MIN_VERSION: Final[Version] = Version("3.0.0")
 REMNAWAVE_MAX_VERSION: Final[Version] = Version("4.0.0")
 
 

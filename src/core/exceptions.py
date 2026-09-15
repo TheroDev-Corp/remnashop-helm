@@ -14,6 +14,10 @@ class UserNotFoundError(Exception):
         super().__init__(f"User with id '{user_id}' not found" if user_id else "User not found")
 
 
+class RemnaUserBindingError(ValueError):
+    """Raised when a bot user would be bound to a Remnawave user that belongs to someone else."""
+
+
 class FileNotFoundError(Exception): ...
 
 

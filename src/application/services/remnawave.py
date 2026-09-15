@@ -6,7 +6,7 @@ from loguru import logger
 from redis.asyncio import Redis
 from remnapy.models.webhook import HwidUserDeviceDto, NodeDto, TorrentBlockerReportDto
 
-from src.application.common import BotService, EventPublisher
+from src.application.common import BotService, EventPublisher, Remnawave
 from src.application.common.dao import SubscriptionDao, UserDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import SubscriptionDto, UserDto
@@ -54,6 +54,7 @@ class RemnaWebhookService:
         event_bus: EventPublisher,
         redis: Redis,
         bot_service: BotService,
+        remnawave: Remnawave,
         #
         sync_user: SyncRemnaUser,
     ) -> None:
@@ -64,41 +65,74 @@ class RemnaWebhookService:
         self.event_bus = event_bus
         self.redis = redis
         self.bot_service = bot_service
+        self.remnawave = remnawave
         #
         self.sync_user = sync_user
 
-    async def _get_user_by_remna_user(self, remna_user: RemnaUserDto) -> Optional[UserDto]:
-        user = None
+    async def _get_user_by_remna_user(
+        self,
+        remna_user: RemnaUserDto,
+        heal: bool = True,
+    ) -> Optional[UserDto]:
         remna_id = getattr(remna_user, "id", None)
+        stored_remna_id: Optional[int] = None
 
         if remna_user.telegram_id:
+            # The payload's telegramId is authoritative. Never fall back to a remna_id lookup:
+            # a stale binding could resolve to a bot user with a different Telegram account.
             user = await self.user_dao.get_by_telegram_id(remna_user.telegram_id)
-            if user and remna_id and remna_id > 0:
-                try:
-                    sub = await self.subscription_dao.get_current(user.id)
-                    if sub and sub.user_remna_id != remna_id:
-                        logger.info(
-                            f"Auto-healing subscription user_remna_id for user '{user.log}': "
-                            f"{sub.user_remna_id} -> {remna_id}"
-                        )
-                        sub.user_remna_id = remna_id
-                        await self.subscription_dao.update(sub)
-                except Exception as e:
-                    logger.debug(f"Failed to auto-heal subscription for user {user.id}: {e}")
-            if user:
-                return user
-
-        if remna_id:
+        elif remna_id:
+            # Matched through the user's current subscription: remna_id is its stored id.
             user = await self.user_dao.get_by_remna_id(remna_id)
-            if (
-                user
-                and remna_user.telegram_id
-                and user.telegram_id
-                and user.telegram_id != remna_user.telegram_id
-            ):
-                user = None
+            stored_remna_id = remna_id
+        else:
+            user = None
+
+        if not user:
+            return None
+
+        if not self.remnawave.is_owned_by(remna_user, user, stored_remna_id):  # type: ignore[arg-type]
+            logger.warning(
+                f"RemnaUser '{remna_id}' (telegram_id '{remna_user.telegram_id}', username "
+                f"'{remna_user.username}') is not owned by {user.log}, ignoring the match"
+            )
+            return None
+
+        if heal and remna_id and remna_id > 0:
+            await self._heal_remna_id(user, remna_user)
 
         return user
+
+    async def _heal_remna_id(self, user: UserDto, remna_user: RemnaUserDto) -> None:
+        """Rebind the user's current subscription to `remna_user` (already verified as owned
+        by `user`) unless the stored binding still points to a valid panel user of theirs."""
+        remna_id = remna_user.id
+        try:
+            async with self.uow:
+                subscription = await self.subscription_dao.get_current(user.id)
+                if not subscription or subscription.user_remna_id == remna_id:
+                    return
+
+                if subscription.user_remna_id > 0:
+                    stored = await self.remnawave.get_user_by_id(subscription.user_remna_id)
+                    if stored and self.remnawave.is_owned_by(
+                        stored, user, subscription.user_remna_id
+                    ):
+                        logger.warning(
+                            f"{user.log} owns several RemnaUsers: stored '{stored.id}' is still "
+                            f"valid, not rebinding to '{remna_id}'"
+                        )
+                        return
+
+                logger.info(
+                    f"Auto-healing subscription user_remna_id for {user.log}: "
+                    f"'{subscription.user_remna_id}' -> '{remna_id}'"
+                )
+                subscription.user_remna_id = remna_id
+                await self.subscription_dao.update(subscription)
+                await self.uow.commit()
+        except Exception as e:
+            logger.warning(f"Failed to auto-heal subscription for {user.log}: {e}")
 
     async def handle_user_event(self, event: str, remna_user: RemnaUserDto) -> None:
         logger.debug(f"Received user event '{event}'")
@@ -111,7 +145,10 @@ class RemnaWebhookService:
             await self._process_sync(event, remna_user)
             return
 
-        user = await self._get_user_by_remna_user(remna_user)
+        user = await self._get_user_by_remna_user(
+            remna_user,
+            heal=event != RemnaUserEvent.DELETED,
+        )
         user_identifier = getattr(remna_user, "uuid", None) or getattr(remna_user, "id", "unknown")
         if not user:
             logger.warning(f"Local user not found for remna user '{user_identifier}'")
@@ -127,7 +164,7 @@ class RemnaWebhookService:
 
         if event == RemnaUserEvent.DELETED:
             logger.debug(f"Executing deletion for RemnaUser '{remna_user.telegram_id}'")
-            await self._process_delete_subscription(remna_user)
+            await self._process_delete_subscription(user, remna_user)
 
         elif event in {
             RemnaUserEvent.REVOKED,
@@ -408,29 +445,27 @@ class RemnaWebhookService:
         dto = SyncRemnaUserDto(remna_user=remna_user, creating=(event == RemnaUserEvent.CREATED))
         await self.sync_user.system(dto)
 
-    async def _process_delete_subscription(self, remna_user: RemnaUserDto) -> None:
+    async def _process_delete_subscription(self, user: UserDto, remna_user: RemnaUserDto) -> None:
+        # Only the owner's *current* subscription may be touched. A lookup by remna id alone
+        # could return another user's (stale) or a historic subscription.
         async with self.uow:
-            subscription = await self.subscription_dao.get_by_remna_id(remna_user.id)
+            subscription = await self.subscription_dao.get_current(user.id)
 
             if not subscription:
-                logger.warning(f"Subscription not found for ID '{remna_user.id}', delete aborted")
+                logger.warning(f"Current subscription not found for {user.log}, delete aborted")
                 return
 
-            user_id = subscription.user_id
-            subscription.status = SubscriptionStatus.DELETED
-            await self.subscription_dao.update(subscription)
+            if subscription.user_remna_id != remna_user.id:
+                logger.warning(
+                    f"Deleted RemnaUser '{remna_user.id}' is not bound to the current subscription "
+                    f"'{subscription.id}' of {user.log} (bound to '{subscription.user_remna_id}'), "
+                    f"delete skipped"
+                )
+                return
 
-            current_subscription = await self.subscription_dao.get_current(user_id)
-
-            if current_subscription:
-                if current_subscription.user_remna_id != subscription.user_remna_id:
-                    logger.debug(
-                        f"Subscription '{subscription.user_remna_id}' "
-                        f"is not current for user_id '{user_id}', skipping unlinking"
-                    )
-                else:
-                    logger.debug(f"Unlinked current subscription for user_id '{user_id}'")
-                    await self.user_dao.clear_current_subscription(user_id)
+            await self.subscription_dao.update_status(subscription.id, SubscriptionStatus.DELETED)
+            await self.user_dao.clear_current_subscription(user.id)
+            logger.debug(f"Unlinked current subscription '{subscription.id}' for {user.log}")
 
             await self.uow.commit()
             sub_id = getattr(remna_user, "uuid", None) or remna_user.id

@@ -3,6 +3,7 @@ from typing import Optional
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, HTTPException, status
+from loguru import logger
 from remnapy.models.hwid import HwidDeviceDto
 
 from src.application.common import Remnawave
@@ -142,21 +143,12 @@ async def get_current_subscription(
     if not current_subscription:
         return None
 
-    remna_user = None
-    if user.telegram_id:
-        remna_users = await remnawave.get_users_by_telegram_id(user.telegram_id)
-        if remna_users:
-            remna_user = remna_users[0]
-
-    if not remna_user and current_subscription.user_remna_id > 0:
-        remna_user = await remnawave.get_user_by_id(current_subscription.user_remna_id)
-        if (
-            remna_user
-            and user.telegram_id
-            and remna_user.telegram_id
-            and remna_user.telegram_id != user.telegram_id
-        ):
-            remna_user = None
+    try:
+        remna_user = await remnawave.resolve_user(user, current_subscription.user_remna_id)
+    except Exception as e:
+        # Usage stats are optional here; the local subscription is still returned.
+        logger.warning(f"Failed to resolve RemnaUser for {user.log}: {e}")
+        remna_user = None
 
     return SubscriptionInfoResponse(
         user_remna_id=str(current_subscription.user_remna_id),
@@ -186,7 +178,14 @@ async def get_subscription_devices(
     if not current_subscription:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
 
-    devices = await remnawave.get_devices(current_subscription.user_remna_id)
+    # Never expose devices of a panel user merely because its id is stored locally.
+    try:
+        remna_user = await remnawave.resolve_user(user, current_subscription.user_remna_id)
+    except Exception as e:
+        # Same as get_devices: a panel outage returns an empty list instead of a 500.
+        logger.warning(f"Failed to resolve RemnaUser for {user.log}: {e}")
+        remna_user = None
+    devices = await remnawave.get_devices(remna_user.id) if remna_user else []
     return DevicesResponse(
         devices=[_to_device_response(device) for device in devices],
         current_count=len(devices),
@@ -201,10 +200,15 @@ async def delete_subscription_device(
     user: CurrentUser,
     delete_user_device: FromDishka[DeleteUserDevice],
 ) -> DeviceDeleteResponse:
-    deleted = await delete_user_device(
-        user,
-        DeleteUserDeviceDto(user_id=user.id, hwid=hwid),
-    )
+    try:
+        deleted = await delete_user_device(
+            user,
+            DeleteUserDeviceDto(user_id=user.id, hwid=hwid),
+        )
+    except CooldownError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     return DeviceDeleteResponse(deleted=deleted)
 
 

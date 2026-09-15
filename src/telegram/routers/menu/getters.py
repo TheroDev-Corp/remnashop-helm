@@ -156,7 +156,13 @@ async def devices_getter(
     if not current_subscription:
         raise ValueError(f"Current subscription for user '{user.telegram_id}' not found")
 
-    devices = await remnawave.get_devices(current_subscription.user_remna_id)
+    try:
+        remna_user = await remnawave.resolve_user(user, current_subscription.user_remna_id)
+    except Exception as e:
+        # Same as get_devices: a panel outage shows an empty list instead of crashing the view.
+        logger.warning(f"Failed to resolve RemnaUser for {user.log}: {e}")
+        remna_user = None
+    devices = await remnawave.get_devices(remna_user.id) if remna_user else []
 
     formatted_devices = [
         {

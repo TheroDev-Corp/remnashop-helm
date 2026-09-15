@@ -7,6 +7,7 @@ from src.application.common.dao import PlanDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, SubscriptionDto, UserDto
+from src.application.use_cases.subscription.commands.management import resolve_bindable_remna_id
 from src.core.enums import SubscriptionStatus
 
 
@@ -47,51 +48,26 @@ class SetUserSubscription(Interactor[SetUserSubscriptionDto, None]):
             plan_snapshot = PlanSnapshotDto.from_plan(plan, data.duration)
             subscription = await self.subscription_dao.get_current(target_user.id)
 
-            if subscription:
-                if subscription.user_remna_id <= 0:
-                    if target_user.telegram_id:
-                        existing_remna_users = await self.remnawave.get_users_by_telegram_id(
-                            target_user.telegram_id
-                        )
-                        remna_id = existing_remna_users[0].id if existing_remna_users else None
-                    else:
-                        remna_id = None
-                else:
-                    remna_id = subscription.user_remna_id
+            # Resolve the owned panel user and check its binding before touching the panel;
+            # update_user reuses it or creates a new one. The returned ID is persisted below.
+            remna_id = await resolve_bindable_remna_id(
+                self.remnawave,
+                self.subscription_dao,
+                target_user,
+                subscription.user_remna_id if subscription else None,
+            )
+            remna_user = await self.remnawave.update_user(
+                user=target_user,
+                id=remna_id,
+                plan=plan_snapshot,
+                reset_traffic=True,
+            )
 
-                if remna_id:
-                    remna_user = await self.remnawave.update_user(
-                        user=target_user,
-                        id=remna_id,
-                        plan=plan_snapshot,
-                        reset_traffic=True,
-                    )
-                else:
-                    remna_user = await self.remnawave.create_user(
-                        user=target_user,
-                        plan=plan_snapshot,
-                    )
+            if subscription:
                 await self.subscription_dao.update_status(
                     subscription_id=subscription.id,
                     status=SubscriptionStatus.DELETED,
                 )
-            else:
-                existing_remna_users = (
-                    await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
-                    if target_user.telegram_id
-                    else []
-                )
-                if existing_remna_users:
-                    remna_user = await self.remnawave.update_user(
-                        user=target_user,
-                        id=existing_remna_users[0].id,
-                        plan=plan_snapshot,
-                        reset_traffic=True,
-                    )
-                else:
-                    remna_user = await self.remnawave.create_user(
-                        user=target_user, plan=plan_snapshot
-                    )
 
             new_subscription = SubscriptionDto(
                 user_remna_id=remna_user.id,

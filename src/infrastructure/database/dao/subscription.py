@@ -7,11 +7,14 @@ from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import and_, case, func, select, update
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import SubscriptionDao, UserDao
+from src.application.common.dao.subscription import RemnaIdConflictDto
 from src.application.dto import PlanSubStatsDto, SubscriptionDto, SubscriptionStatsDto
 from src.core.enums import SubscriptionStatus
+from src.core.exceptions import RemnaUserBindingError
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Subscription, User
 
@@ -38,7 +41,34 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
             list[Subscription], list[SubscriptionDto]
         )
 
+    async def ensure_remna_id_available(self, user_remna_id: int, user_id: int) -> None:
+        """Defense in depth: one Remnawave user may back the current subscription of one bot
+        user only. The same user may legitimately keep historic subscriptions with that id."""
+        if not user_remna_id or user_remna_id <= 0:
+            return
+
+        stmt = (
+            select(User.id, User.telegram_id)
+            .join(Subscription, User.current_subscription_id == Subscription.id)
+            .where(Subscription.user_remna_id == user_remna_id, User.id != user_id)
+            .order_by(User.id)
+        )
+        owners = (await self.session.execute(stmt)).all()
+        if not owners:
+            return
+
+        owners_repr = ", ".join(f"user_id={row[0]} telegram_id={row[1]}" for row in owners)
+        logger.error(
+            f"Refusing to bind RemnaUser '{user_remna_id}' to user_id '{user_id}': "
+            f"already bound to current subscription of {owners_repr}"
+        )
+        raise RemnaUserBindingError(
+            f"RemnaUser '{user_remna_id}' is already bound to another user ({owners_repr})"
+        )
+
     async def create(self, subscription: SubscriptionDto, user_id: int) -> SubscriptionDto:
+        await self.ensure_remna_id_available(subscription.user_remna_id, user_id)
+
         subscription_data = self.retort.dump(subscription)
         subscription_data.pop("id", None)
         subscription_data.pop("user_id", None)
@@ -67,17 +97,55 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
         return None
 
     async def get_by_remna_id(self, user_remna_id: int) -> Optional[SubscriptionDto]:
-        if not user_remna_id:
+        # Only current subscriptions: historic (e.g. DELETED) rows and other users' rows with a
+        # stale id must never be picked as "the" subscription of a panel user.
+        if not user_remna_id or user_remna_id <= 0:
             return None
-        stmt = select(Subscription).where(Subscription.user_remna_id == user_remna_id)
-        db_subscription = await self.session.scalar(stmt)
+        stmt = (
+            select(Subscription)
+            .join(User, User.current_subscription_id == Subscription.id)
+            .where(Subscription.user_remna_id == user_remna_id)
+            .order_by(Subscription.id)
+            .limit(2)
+        )
+        db_subscriptions = list((await self.session.scalars(stmt)).all())
 
-        if db_subscription:
-            logger.debug(f"Subscription found by remna ID '{user_remna_id}'")
-            return self._convert_to_dto(db_subscription)
+        if len(db_subscriptions) > 1:
+            logger.warning(
+                f"RemnaUser '{user_remna_id}' is bound to several current subscriptions "
+                f"(e.g. {[s.id for s in db_subscriptions]}), refusing to pick one"
+            )
+            return None
 
-        logger.debug(f"Subscription with remna ID '{user_remna_id}' not found")
+        if db_subscriptions:
+            logger.debug(f"Current subscription found by remna ID '{user_remna_id}'")
+            return self._convert_to_dto(db_subscriptions[0])
+
+        logger.debug(f"Current subscription with remna ID '{user_remna_id}' not found")
         return None
+
+    async def get_remna_id_conflicts(self) -> list[RemnaIdConflictDto]:
+        stmt = (
+            select(
+                Subscription.user_remna_id,
+                func.array_agg(aggregate_order_by(User.id, User.id)),
+                func.array_agg(aggregate_order_by(User.telegram_id, User.id)),
+            )
+            .join(User, User.current_subscription_id == Subscription.id)
+            .where(Subscription.user_remna_id > 0)
+            .group_by(Subscription.user_remna_id)
+            .having(func.count(func.distinct(User.id)) > 1)
+            .order_by(Subscription.user_remna_id)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [
+            RemnaIdConflictDto(
+                user_remna_id=int(row[0]),
+                user_ids=list(row[1] or []),
+                telegram_ids=list(row[2] or []),
+            )
+            for row in rows
+        ]
 
     async def get_all_by_user(self, user_id: int) -> list[SubscriptionDto]:
         stmt = (
@@ -117,6 +185,13 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
                 f"No changes detected for subscription '{subscription.id}', skipping update"
             )
             return await self.get_by_id(subscription.id)
+
+        if "user_remna_id" in subscription.changed_data and subscription.user_remna_id > 0:
+            user_id = subscription.user_id or await self.session.scalar(
+                select(Subscription.user_id).where(Subscription.id == subscription.id)
+            )
+            if user_id:
+                await self.ensure_remna_id_available(subscription.user_remna_id, user_id)
 
         values_to_update = self._serialize_for_update(subscription, SubscriptionDto, Subscription)
 

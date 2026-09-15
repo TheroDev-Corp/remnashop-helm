@@ -70,12 +70,21 @@ class UserDaoImpl(UserDao):
             select(User)
             .join(Subscription, User.current_subscription_id == Subscription.id)
             .where(Subscription.user_remna_id == remna_id)
+            .order_by(User.id)
+            .limit(2)
         )
-        db_user = await self.session.scalar(stmt)
+        db_users = list((await self.session.scalars(stmt)).all())
 
-        if db_user:
+        if len(db_users) > 1:
+            logger.warning(
+                f"RemnaUser '{remna_id}' is bound to current subscriptions of several users "
+                f"(e.g. user_ids {[u.id for u in db_users]}), refusing to pick one"
+            )
+            return None
+
+        if db_users:
             logger.debug(f"User with remna_id '{remna_id}' found in database")
-            return self._convert_to_dto(db_user)
+            return self._convert_to_dto(db_users[0])
 
         logger.debug(f"User with remna_id '{remna_id}' not found")
         return None

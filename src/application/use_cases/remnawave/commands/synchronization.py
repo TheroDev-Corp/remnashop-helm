@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from loguru import logger
 
@@ -21,6 +22,56 @@ class SyncRemnaUserDto:
     creating: bool
 
 
+def bind_subscription_to_remna_user(
+    subscription: SubscriptionDto,
+    remna_user: RemnaUserDto,
+) -> bool:
+    """Point `subscription` to `remna_user`, which the caller MUST have obtained for the
+    subscription's owner (resolve_user / create_user / update_user). Returns True if changed."""
+    if subscription.user_remna_id != remna_user.id:
+        logger.info(
+            f"Binding subscription '{subscription.id}' to RemnaUser "
+            f"'{subscription.user_remna_id}' -> '{remna_user.id}'"
+        )
+        subscription.user_remna_id = remna_user.id
+
+    subscription_url = getattr(remna_user, "subscription_url", None)
+    if subscription_url and subscription.url != subscription_url:
+        subscription.url = subscription_url
+
+    return bool(subscription.changed_data)
+
+
+async def find_bot_user_for_remna_user(
+    user_dao: UserDao,
+    remnawave: Remnawave,
+    remna_user: RemnaUserDto,
+) -> tuple[Optional[UserDto], bool]:
+    """Find the bot user owning `remna_user`.
+
+    Returns `(user, conflict)`. `conflict` is True when a bot user is bound to this panel user
+    in the DB but does not own it (so the caller must neither bind nor create anything).
+    """
+    if remna_user.telegram_id:
+        # telegramId is authoritative: never fall back to the stored remna id.
+        return await user_dao.get_by_telegram_id(remna_user.telegram_id), False
+
+    remna_id = getattr(remna_user, "id", None)
+    if not remna_id:
+        return None, False
+
+    # get_by_remna_id matches the user's *current* subscription, so remna_id is its stored id.
+    user = await user_dao.get_by_remna_id(remna_id)
+    if user and not remnawave.is_owned_by(remna_user, user, remna_id):  # type: ignore[arg-type]
+        logger.warning(
+            f"RemnaUser '{remna_id}' (no telegram_id, username '{remna_user.username}') is bound "
+            f"to {user.log} in DB but not owned by them, refusing to match"
+        )
+        return None, True
+
+    return user, False
+
+
 class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
     required_permission = Permission.USER_SYNC
 
@@ -40,27 +91,18 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
         self.remnawave = remnawave
         self.cryptographer = cryptographer
 
-    async def _execute(self, actor: UserDto, data: SyncRemnaUserDto) -> bool:
+    async def _execute(self, actor: UserDto, data: SyncRemnaUserDto) -> bool:  # noqa: C901
         remna_user = data.remna_user
         user_identifier = getattr(remna_user, "uuid", None) or getattr(remna_user, "id", "unknown")
 
         async with self.uow:
-            user = None
-            remna_id = getattr(remna_user, "id", None)
+            user, conflict = await find_bot_user_for_remna_user(
+                self.user_dao, self.remnawave, remna_user
+            )
+            if conflict:
+                return False
 
-            if remna_user.telegram_id:
-                user = await self.user_dao.get_by_telegram_id(remna_user.telegram_id)
-
-            if not user and remna_id:
-                user = await self.user_dao.get_by_remna_id(remna_id)
-                if (
-                    user
-                    and remna_user.telegram_id
-                    and user.telegram_id
-                    and user.telegram_id != remna_user.telegram_id
-                ):
-                    user = None
-
+            created = False
             if not user and data.creating:
                 logger.debug(f"User '{user_identifier}' not found in bot, creating new user")
 
@@ -76,6 +118,7 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
                     persist=persist,
                     column="referral_code",
                 )
+                created = True
 
             if not user:
                 logger.warning(
@@ -84,6 +127,19 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
                 return False
 
             subscription = await self.subscription_dao.get_current(user.id)
+
+            # A bot user just created for this panel user owns it by construction: no bot user
+            # was bound to it (checked above) and the DB guard rejects a concurrent binding.
+            stored_remna_id = subscription.user_remna_id if subscription else None
+            if not created and not self.remnawave.is_owned_by(
+                remna_user,  # type: ignore[arg-type]
+                user,
+                stored_remna_id,
+            ):
+                logger.warning(
+                    f"Sync refused: RemnaUser '{user_identifier}' is not owned by {user.log}"
+                )
+                return False
             remna_subscription = RemnaSubscriptionDto.from_remna_user(remna_user)
 
             if not subscription:
@@ -95,13 +151,24 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
                 target_id = remna_user.telegram_id or user_identifier
                 logger.info(f"Sync completed for user '{target_id}'")
                 return False
-            else:
-                logger.info(f"Synchronizing existing subscription for user {user.log}")
-                changed = await self._update_subscription(subscription, remna_subscription)
-                await self.uow.commit()
-                target_id = remna_user.telegram_id or user_identifier
-                logger.info(f"Sync completed for user '{target_id}'")
-                return changed
+
+            if 0 < subscription.user_remna_id != remna_user.id:
+                # The user may own several panel users (duplicates). Keep a still-valid binding
+                # instead of flipping it to whichever duplicate triggered the sync.
+                stored = await self.remnawave.get_user_by_id(subscription.user_remna_id)
+                if stored and self.remnawave.is_owned_by(stored, user, subscription.user_remna_id):
+                    logger.warning(
+                        f"{user.log} owns several RemnaUsers: current subscription is bound to "
+                        f"'{stored.id}', skipping sync from '{remna_user.id}'"
+                    )
+                    return False
+
+            logger.info(f"Synchronizing existing subscription for user {user.log}")
+            changed = await self._update_subscription(subscription, remna_subscription)
+            await self.uow.commit()
+            target_id = remna_user.telegram_id or user_identifier
+            logger.info(f"Sync completed for user '{target_id}'")
+            return changed
 
     def _create_user_dto(self, data: RemnaUserDto, referral_code: str) -> UserDto:
         fallback_name = str(getattr(data, "uuid", None) or getattr(data, "id", "user"))
@@ -160,6 +227,8 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
         target: SubscriptionDto,
         source: RemnaSubscriptionDto,
     ) -> bool:
+        # Callers must have verified that `source` belongs to the subscription's owner:
+        # apply_sync copies the panel id into `user_remna_id`.
         subscription = self.remnawave.apply_sync(target, source)
         await self.subscription_dao.update(subscription)
         return bool(subscription.changed_data)
@@ -174,13 +243,11 @@ class SyncAllUsersFromBot(Interactor[None, dict[str, int]]):
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
         remnawave: Remnawave,
-        sync_remna_user: SyncRemnaUser,
     ) -> None:
         self.uow = uow
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
-        self.sync_remna_user = sync_remna_user
 
     async def _execute(self, actor: UserDto, data: None) -> dict[str, int]:
         bot_users = await self._fetch_all_bot_users()
@@ -200,35 +267,36 @@ class SyncAllUsersFromBot(Interactor[None, dict[str, int]]):
                     skipped += 1
                     continue
 
-                remna_user = await self.remnawave.get_user_by_id(subscription.user_remna_id)
+                remna_user = await self.remnawave.resolve_user(user, subscription.user_remna_id)
 
                 if remna_user:
-                    updated_user = await self.remnawave.update_user(
+                    # Check the binding before mutating the panel, not after.
+                    await self.subscription_dao.ensure_remna_id_available(remna_user.id, user.id)
+                    result = await self.remnawave.update_user(
                         user=user,
-                        id=subscription.user_remna_id,
+                        id=remna_user.id,
                         subscription=subscription,
                     )
-                    if updated_user.subscription_url != subscription.url:
-                        subscription.url = updated_user.subscription_url
-                        async with self.uow:
-                            await self.subscription_dao.update(subscription)
-                            await self.uow.commit()
                     updated += 1
                 else:
-                    created_user = await self.remnawave.create_user(
+                    result = await self.remnawave.create_user(
                         user=user,
                         subscription=subscription,
                     )
-                    await self.sync_remna_user.system(
-                        SyncRemnaUserDto(created_user, creating=False)
-                    )
                     recreated += 1
+
+                # Persist the id returned for *this* bot user directly (no re-lookup that could
+                # match a different bot user).
+                if bind_subscription_to_remna_user(subscription, result):
+                    async with self.uow:
+                        await self.subscription_dao.update(subscription)
+                        await self.uow.commit()
 
             except Exception as exception:
                 logger.exception(f"Error reverse-syncing bot user {user.log}: {exception}")
                 errors += 1
 
-        result = {
+        result_summary = {
             "total_bot_users": len(bot_users),
             "updated": updated,
             "recreated": recreated,
@@ -236,8 +304,8 @@ class SyncAllUsersFromBot(Interactor[None, dict[str, int]]):
             "errors": errors,
         }
 
-        logger.info(f"Reverse sync (bot → panel) summary: '{result}'")
-        return result
+        logger.info(f"Reverse sync (bot → panel) summary: '{result_summary}'")
+        return result_summary
 
     async def _fetch_all_bot_users(self) -> list[UserDto]:
         all_users: list[UserDto] = []
@@ -274,7 +342,8 @@ class SyncAllUsersFromPanel(Interactor[None, dict[str, int]]):
     async def _execute(self, actor: UserDto, data: None) -> dict[str, int]:
         panel_users = await self._fetch_all_panel_users()
         bot_users = await self._fetch_all_bot_users()
-        bot_users_map = {user.telegram_id: user for user in bot_users}
+        # Web/imported users have no telegram_id; they must not collapse under a `None` key.
+        bot_users_map = {user.telegram_id: user for user in bot_users if user.telegram_id}
 
         logger.info(f"Total users in panel: '{len(panel_users)}'")
         logger.info(f"Total users in bot: '{len(bot_users)}'")
@@ -292,15 +361,11 @@ class SyncAllUsersFromPanel(Interactor[None, dict[str, int]]):
                 if remna_user.telegram_id:
                     user = bot_users_map.get(remna_user.telegram_id)
                 else:
-                    user = None
-                    remna_id = getattr(remna_user, "id", None)
-                    if remna_id:
-                        user = await self.user_dao.get_by_remna_id(remna_id)
-                    if not user and getattr(remna_user, "uuid", None):
-                        try:
-                            user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
-                        except Exception:
-                            pass
+                    user, conflict = await find_bot_user_for_remna_user(
+                        self.user_dao, self.remnawave, remna_user
+                    )
+                    if conflict:
+                        continue
 
                 if not user:
                     await self.sync_remna_user.system(SyncRemnaUserDto(remna_user, True))
