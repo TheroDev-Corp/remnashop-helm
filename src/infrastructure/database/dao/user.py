@@ -219,6 +219,17 @@ class UserDaoImpl(UserDao):
             f"Trial available status for user_id '{user_id}' set to '{is_trial_available}'"
         )
 
+    async def claim_trial(self, user_id: int) -> bool:
+        stmt = (
+            update(User)
+            .where(User.id == user_id, User.is_trial_available.is_(True))
+            .values(is_trial_available=False)
+            .returning(User.id)
+        )
+        claimed = await self.session.scalar(stmt) is not None
+        logger.debug(f"Trial claim for user_id '{user_id}': '{claimed}'")
+        return claimed
+
     async def set_bot_blocked_status(self, user_id: int, is_bot_blocked: bool) -> None:
         stmt = update(User).where(User.id == user_id).values(is_bot_blocked=is_bot_blocked)
         await self.session.execute(stmt)

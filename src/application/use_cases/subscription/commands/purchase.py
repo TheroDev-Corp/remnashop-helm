@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from loguru import logger
 
@@ -59,32 +59,38 @@ class ActivateTrialSubscription(Interactor[ActivateTrialSubscriptionDto, None]):
 
         logger.info(f"{actor.log} Started trial for user '{user.id}'")
 
-        # create_user may PATCH an existing owned panel user: refuse a binding conflict first,
-        # so the DB guard in subscription_dao.create cannot fail after the panel changed.
-        await resolve_bindable_remna_id(self.remnawave, self.subscription_dao, user, None)
-        created_user = await self.remnawave.create_user(user, plan=plan)
-
-        trial_subscription = SubscriptionDto(
-            user_remna_id=created_user.id,
-            status=SubscriptionStatus(created_user.status),
-            is_trial=True,
-            traffic_limit=plan.traffic_limit,
-            device_limit=plan.device_limit,
-            traffic_limit_strategy=plan.traffic_limit_strategy,
-            tag=plan.tag,
-            internal_squads=plan.internal_squads,
-            external_squad=plan.external_squad,
-            expire_at=created_user.expire_at,
-            url=created_user.subscription_url,
-            plan_snapshot=plan,
-        )
-
         async with self.uow:
+            # create_user may PATCH an existing owned panel user: refuse a binding conflict first,
+            # so the DB guard in subscription_dao.create cannot fail after the panel changed.
+            await resolve_bindable_remna_id(self.remnawave, self.subscription_dao, user, None)
+
+            # Atomic guard against parallel activations (two web requests, bot + web): the
+            # conditional UPDATE locks the user row until commit/rollback, so a concurrent claim
+            # waits and then loses before any panel mutation. A failure below rolls it back.
+            if not await self.user_dao.claim_trial(user.id):
+                raise TrialNotAvailableError(f"Trial already claimed for user '{user.remna_name}'")
+
+            created_user = await self.remnawave.create_user(user, plan=plan)
+
+            trial_subscription = SubscriptionDto(
+                user_remna_id=created_user.id,
+                status=SubscriptionStatus(created_user.status),
+                is_trial=True,
+                traffic_limit=plan.traffic_limit,
+                device_limit=plan.device_limit,
+                traffic_limit_strategy=plan.traffic_limit_strategy,
+                tag=plan.tag,
+                internal_squads=plan.internal_squads,
+                external_squad=plan.external_squad,
+                expire_at=created_user.expire_at,
+                url=created_user.subscription_url,
+                plan_snapshot=plan,
+            )
+
             await self.subscription_dao.create(
                 subscription=trial_subscription,
                 user_id=user.id,
             )
-            await self.user_dao.set_trial_available(user.id, False)
             await self.uow.commit()
 
         logger.debug(f"{actor.log} Created new trial subscription for user '{user.id}'")
@@ -111,6 +117,9 @@ class PurchaseSubscriptionDto:
     user: UserDto
     transaction: TransactionDto
     subscription: Optional[SubscriptionDto]
+    # Called inside the purchase DB transaction right before commit (e.g. to mark the paying
+    # transaction fulfilled atomically with the subscription change). Raising rolls back.
+    before_commit: Optional[Callable[[], Awaitable[None]]] = None
 
 
 class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
@@ -160,6 +169,8 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                 if user.purchase_discount:
                     user.purchase_discount = 0
                     await self.user_dao.update(user)
+                if data.before_commit:
+                    await data.before_commit()
                 await self.uow.commit()
 
                 logger.debug(f"{actor.log} Created new subscription for user '{user.id}'")
@@ -204,6 +215,8 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                 if user.purchase_discount:
                     user.purchase_discount = 0
                     await self.user_dao.update(user)
+                if data.before_commit:
+                    await data.before_commit()
                 await self.uow.commit()
                 logger.debug(f"{actor.log} Renewed subscription for user '{user.id}'")
 
@@ -240,6 +253,8 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                 if user.purchase_discount:
                     user.purchase_discount = 0
                     await self.user_dao.update(user)
+                if data.before_commit:
+                    await data.before_commit()
                 await self.uow.commit()
                 logger.debug(f"{actor.log} Changed subscription for user '{user.id}'")
 

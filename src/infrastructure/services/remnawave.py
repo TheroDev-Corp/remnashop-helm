@@ -28,7 +28,7 @@ from src.application.dto import (
 )
 from src.core.constants import REMNASHOP_PREFIX, REMNAWAVE_MIN_VERSION, WEB_PREFIX
 from src.core.enums import SubscriptionStatus
-from src.core.exceptions import RemnaUserBindingError
+from src.core.exceptions import RemnaUserBindingError, RemnawaveActionError
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 from src.core.utils.time import datetime_now
 
@@ -41,6 +41,11 @@ _FILTER_PAGE_SIZE = 100
 _STREAM_PAGE_SIZE = 250
 # ERRORS.USER_USERNAME_ALREADY_EXISTS in libs/contract/constants/errors/errors.ts (HTTP 400).
 _USERNAME_ALREADY_EXISTS_CODE = "A019"
+# ERRORS.USER_ALREADY_DISABLED / USER_ALREADY_ENABLED (HTTP 400). users.service.ts enableUser
+# only refuses when status is already ACTIVE (EXPIRED/LIMITED/DISABLED users can be enabled);
+# disableUser only when already DISABLED. Both mean the panel is already in the wanted state.
+_ALREADY_IN_STATE_CODES: dict[str, str] = {"enable": "A030", "disable": "A029"}
+_SYNC_EXCLUDED_FIELDS: frozenset[str] = frozenset({"id", "user_id", "created_at", "updated_at"})
 
 
 def _web_remna_name(user: UserDto) -> str:
@@ -336,6 +341,17 @@ class RemnawaveImpl(Remnawave):
         if response.status_code == 404:
             logger.debug(f"RemnaUser '{id}' not found in panel")
             raise _not_found(id)
+        if response.status_code == 400:
+            code = self._error_code(response)
+            if code is not None and code == _ALREADY_IN_STATE_CODES.get(action):
+                logger.info(f"RemnaUser '{id}' action '{action}' skipped: already in that state")
+                return
+            message = self._error_message(response)
+            logger.warning(
+                f"Remnawave refused action '{action}' for RemnaUser '{id}': "
+                f"code '{code}', message '{message}'"
+            )
+            raise RemnawaveActionError(action, id, response.status_code, code, message)
         if response.status_code not in {200, 201, 204}:
             response.raise_for_status()
         logger.info(f"RemnaUser '{id}' action '{action}' succeeded")
@@ -415,6 +431,17 @@ class RemnawaveImpl(Remnawave):
         except Exception:
             return None
         return body.get("errorCode") if isinstance(body, dict) else None
+
+    @staticmethod
+    def _error_message(response: Any) -> Optional[str]:
+        try:
+            body = response.json()
+        except Exception:
+            return getattr(response, "text", None) or None
+        if not isinstance(body, dict):
+            return None
+        message = body.get("message")
+        return str(message) if message is not None else None
 
     async def _stream_users(self, params: dict[str, Any]) -> Optional[list[UserResponseDto]]:
         """Cursor-paginated GET /users/stream. Returns None if the endpoint is unavailable
@@ -616,7 +643,10 @@ class RemnawaveImpl(Remnawave):
                     )
                     setattr(target, target_field, new_value)
 
-        common_fields = target_fields & source_fields
+        # Identity/bookkeeping fields must never be copied: RemnaSubscriptionDto.id is the panel
+        # user id, while SubscriptionDto.id is the local primary key. Copying it made the DAO
+        # UPDATE target `WHERE id = <remna id>` (no row, or another user's subscription).
+        common_fields = (target_fields & source_fields) - _SYNC_EXCLUDED_FIELDS
 
         for field_name in common_fields:
             old_value = getattr(target, field_name)

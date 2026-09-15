@@ -72,6 +72,7 @@ def user_dao(sample_user_dto):
     dao.update = AsyncMock()
     dao.delete = AsyncMock()
     dao.set_trial_available = AsyncMock()
+    dao.claim_trial = AsyncMock(return_value=True)
     dao.clear_current_subscription = AsyncMock()
     return dao
 

@@ -1,5 +1,7 @@
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
+from typing import Final
 from uuid import UUID
 
 from loguru import logger
@@ -63,12 +65,30 @@ from src.core.enums import (
     SystemNotificationType,
     TransactionStatus,
 )
-from src.core.exceptions import PurchaseError
 from src.core.utils.i18n_helpers import (
     i18n_format_days,
     i18n_format_device_limit,
     i18n_format_traffic_limit,
 )
+from src.core.utils.time import datetime_now
+
+# Fulfilment (granting the subscription of a paid transaction) is retried with backoff.
+MAX_FULFILLMENT_ATTEMPTS: Final[int] = 12
+# How long an in-flight attempt blocks others (covers a worker dying mid-attempt).
+FULFILLMENT_LEASE: Final[timedelta] = timedelta(minutes=5)
+# Head start for the webhook worker between committing COMPLETED and claiming fulfilment.
+FULFILLMENT_GRACE: Final[timedelta] = timedelta(minutes=2)
+FULFILLMENT_RETRY_BASE: Final[timedelta] = timedelta(minutes=5)
+FULFILLMENT_RETRY_MAX: Final[timedelta] = timedelta(hours=6)
+RETRY_BATCH_SIZE: Final[int] = 50
+
+
+def fulfillment_retry_delay(attempt: int) -> timedelta:
+    return min(FULFILLMENT_RETRY_BASE * 2 ** max(attempt - 1, 0), FULFILLMENT_RETRY_MAX)
+
+
+class TransactionAlreadyFulfilledError(Exception):
+    pass
 
 
 class CreateDefaultPaymentGateway(Interactor[None, None]):
@@ -427,9 +447,58 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
         logger.info(f"Payment succeeded '{payment_id}' for user {user.log}")
 
     async def _handle_success(self, user: UserDto, transaction: TransactionDto) -> None:
-        if transaction.is_test:
-            await self.notifier.notify_user(user, i18n_key="ntf-gateway.test-payment-confirmed")
+        # COMPLETED is already committed, so the payment cannot be lost from here on: if this
+        # worker dies before the claim or mid-attempt, RetryUnfulfilledPayments picks it up after
+        # FULFILLMENT_GRACE / FULFILLMENT_LEASE.
+        async with self.uow:
+            attempt = await self.transaction_dao.claim_fulfillment(
+                transaction.payment_id,
+                MAX_FULFILLMENT_ATTEMPTS,
+                FULFILLMENT_LEASE,
+            )
+            await self.uow.commit()
+
+        if attempt is None:
+            logger.info(f"Fulfilment of '{transaction.payment_id}' is already handled elsewhere")
             return
+
+        await self._fulfil(user, transaction, attempt)
+
+    async def fulfil_pending(self, payment_id: UUID) -> bool:
+        """Retry granting the subscription of a paid, unfulfilled transaction.
+
+        Safe to call repeatedly: the claim is conditional and the fulfilled flag is written in
+        the same DB transaction as the subscription change."""
+        async with self.uow:
+            transaction = await self.transaction_dao.get_by_payment_id(payment_id)
+            user = await self.user_dao.get_by_id(transaction.user_id) if transaction else None
+
+            if not transaction or not user:
+                logger.critical(f"Cannot fulfil '{payment_id}': transaction or user not found")
+                return False
+
+            attempt = await self.transaction_dao.claim_fulfillment(
+                payment_id,
+                MAX_FULFILLMENT_ATTEMPTS,
+                FULFILLMENT_LEASE,
+            )
+            await self.uow.commit()
+
+        if attempt is None:
+            return False
+
+        logger.info(f"Retrying fulfilment of '{payment_id}' (attempt {attempt}) for {user.log}")
+        return await self._fulfil(user, transaction, attempt)
+
+    async def _fulfil(self, user: UserDto, transaction: TransactionDto, attempt: int) -> bool:
+        payment_id = transaction.payment_id
+
+        if transaction.is_test:
+            async with self.uow:
+                await self.transaction_dao.mark_fulfilled(payment_id)
+                await self.uow.commit()
+            await self.notifier.notify_user(user, i18n_key="ntf-gateway.test-payment-confirmed")
+            return True
 
         subscription = await self.subscription_dao.get_current(user.id)
         old_plan = subscription.plan_snapshot if subscription else None
@@ -470,42 +539,33 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
             previous_plan_duration=i18n_format_days(old_plan.duration) if old_plan else "N/A",
         )
 
+        async def mark_fulfilled() -> None:
+            # Runs inside PurchaseSubscription's DB transaction right before its commit: the
+            # subscription change and the fulfilled flag persist atomically, so a retry can never
+            # extend the same payment twice.
+            if not await self.transaction_dao.mark_fulfilled(payment_id):
+                raise TransactionAlreadyFulfilledError(str(payment_id))
+
         try:
             await self.purchase_subscription.system(
-                PurchaseSubscriptionDto(user, transaction, subscription)
+                PurchaseSubscriptionDto(
+                    user,
+                    transaction,
+                    subscription,
+                    before_commit=mark_fulfilled,
+                )
             )
+        except TransactionAlreadyFulfilledError:
+            logger.warning(f"Transaction '{payment_id}' was already fulfilled, changes rolled back")
+            return False
         except Exception as e:
+            # The payment stays COMPLETED and unfulfilled: it is retried, never marked FAILED.
             logger.exception(
                 f"Failed to process purchase for user '{user.remna_name}', "
-                f"transaction '{transaction.payment_id}'"
+                f"transaction '{payment_id}' (attempt {attempt}/{MAX_FULFILLMENT_ATTEMPTS})"
             )
-            async with self.uow:  # fresh UoW, no nesting
-                await self.transaction_dao.update_status(
-                    transaction.payment_id, TransactionStatus.FAILED
-                )
-                await self.uow.commit()
-            await self.notifier.notify_system(
-                MessagePayloadDto(
-                    i18n_key="event-payment.purchase-failed",
-                    i18n_kwargs={
-                        "payment_id": str(transaction.payment_id),
-                        "gateway_type": transaction.gateway_type,
-                        "final_amount": transaction.pricing.final_amount,
-                        "original_amount": transaction.pricing.original_amount,
-                        "discount_percent": transaction.pricing.discount_percent,
-                        "currency": transaction.currency.symbol,
-                        "telegram_id": user.telegram_id or 0,
-                        "username": user.username or 0,
-                        "name": user.name,
-                        "email": user.email,
-                    },
-                ),
-                roles=[Role.OWNER, Role.DEV],
-                notification_type=SystemNotificationType.SYSTEM,
-            )
-            if user.telegram_id is not None:
-                await self.redirect.to_failed_payment(user.telegram_id)
-            raise PurchaseError(e)
+            await self._handle_fulfilment_failure(user, transaction, attempt, e)
+            return False
 
         await self.event_publisher.publish(event)
 
@@ -542,3 +602,100 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
 
         if user.telegram_id is not None:
             await self.redirect.to_success_payment(user.telegram_id, transaction.purchase_type)
+
+        return True
+
+    async def _handle_fulfilment_failure(
+        self,
+        user: UserDto,
+        transaction: TransactionDto,
+        attempt: int,
+        error: Exception,
+    ) -> None:
+        payment_id = transaction.payment_id
+        retry_at = datetime_now() + fulfillment_retry_delay(attempt)
+        first_failure = True
+
+        try:
+            async with self.uow:
+                first_failure = await self.transaction_dao.mark_fulfillment_failed(
+                    payment_id,
+                    retry_at,
+                    f"{type(error).__name__}: {error}",
+                )
+                await self.uow.commit()
+        except Exception:
+            # The claim lease still delays the next attempt; the payment stays retryable.
+            logger.exception(f"Failed to record fulfilment failure for '{payment_id}'")
+
+        if attempt >= MAX_FULFILLMENT_ATTEMPTS:
+            logger.critical(
+                f"Automatic fulfilment of paid transaction '{payment_id}' for {user.log} "
+                f"gave up after {attempt} attempts — manual action required"
+            )
+
+        if not first_failure:
+            return  # admins and the user were already told on the first failure
+
+        await self.notifier.notify_system(
+            MessagePayloadDto(
+                i18n_key="event-payment.purchase-failed",
+                i18n_kwargs={
+                    "payment_id": str(payment_id),
+                    "gateway_type": transaction.gateway_type,
+                    "final_amount": transaction.pricing.final_amount,
+                    "original_amount": transaction.pricing.original_amount,
+                    "discount_percent": transaction.pricing.discount_percent,
+                    "currency": transaction.currency.symbol,
+                    "telegram_id": user.telegram_id or 0,
+                    "username": user.username or 0,
+                    "name": user.name,
+                    "email": user.email,
+                },
+            ),
+            roles=[Role.OWNER, Role.DEV],
+            notification_type=SystemNotificationType.SYSTEM,
+        )
+
+        if user.telegram_id is not None:
+            await self.notifier.notify_user(
+                user,
+                payload=MessagePayloadDto(
+                    i18n_key="ntf-gateway.payment-fulfillment-pending",
+                    delete_after=None,
+                ),
+            )
+
+
+class RetryUnfulfilledPayments(Interactor[None, int]):
+    required_permission = None
+
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        transaction_dao: TransactionDao,
+        process_payment: ProcessPayment,
+    ) -> None:
+        self.uow = uow
+        self.transaction_dao = transaction_dao
+        self.process_payment = process_payment
+
+    async def _execute(self, actor: UserDto, data: None) -> int:
+        async with self.uow:
+            payment_ids = await self.transaction_dao.get_unfulfilled_payment_ids(
+                MAX_FULFILLMENT_ATTEMPTS,
+                FULFILLMENT_GRACE,
+                RETRY_BATCH_SIZE,
+            )
+
+        fulfilled = 0
+        for payment_id in payment_ids:
+            try:
+                if await self.process_payment.fulfil_pending(payment_id):
+                    fulfilled += 1
+            except Exception:
+                logger.exception(f"Fulfilment retry of '{payment_id}' crashed")
+
+        if payment_ids:
+            logger.info(f"Fulfilled {fulfilled}/{len(payment_ids)} pending paid transactions")
+        return fulfilled

@@ -42,6 +42,13 @@ class UserDao(Protocol):
 
     async def set_trial_available(self, user_id: int, is_trial_available: bool) -> None: ...
 
+    async def claim_trial(self, user_id: int) -> bool:
+        """Conditionally flip is_trial_available true -> false; False if it was already false.
+
+        The row stays locked until the surrounding DB transaction ends, so a parallel claim
+        waits and then loses; a rollback gives the trial back."""
+        ...
+
     async def set_bot_blocked_status(self, user_id: int, is_bot_blocked: bool) -> None: ...
 
     async def set_current_subscription_by_id(self, user_id: int, subscription_id: int) -> None: ...

@@ -189,10 +189,28 @@ class YookassaGateway(BasePaymentGateway):
         return PaymentResultDto(id=UUID(payment_id_str), url=str(payment_url))
 
     def _verify_webhook(self, request: Request) -> bool:
-        ip = self._get_ip(request.headers)
+        ip = self._get_client_ip(request)
 
         if not self._is_ip_trusted(ip):
             logger.critical(f"Webhook received from untrusted IP: '{ip}'")
             return False
 
         return True
+
+    def _get_client_ip(self, request: Request) -> str:
+        config = getattr(self, "config", None)
+        trusted_proxies = [net for net in (config.trusted_proxies if config else []) if net]
+
+        if not trusted_proxies:
+            # Legacy default: forwarded headers are honored from any peer.
+            return self._get_ip(request.headers)
+
+        peer = request.client.host if request.client else None
+        if not peer:
+            raise PermissionError("Client address not available")
+
+        if any(self._is_ip_in_network(peer, net) for net in trusted_proxies):
+            # X-Forwarded-For may be a chain: the left-most entry is the original client.
+            return self._get_ip(request.headers).split(",")[0].strip()
+
+        return peer

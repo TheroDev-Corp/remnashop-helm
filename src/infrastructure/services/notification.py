@@ -4,6 +4,7 @@ import html
 import string
 import traceback
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any, Callable, Optional, Sequence, Union
 
 from aiogram import Bot
@@ -63,6 +64,7 @@ from src.application.events.user import (
 from src.core.config import AppConfig
 from src.core.enums import Locale, Role
 from src.core.types import AnyKeyboard, NotificationType
+from src.core.utils.time import datetime_now
 from src.infrastructure.services.event_bus import on_event
 from src.infrastructure.services.notification_queue import NotificationWorker
 from src.telegram.keyboards import (
@@ -75,6 +77,34 @@ from src.telegram.keyboards import (
     get_user_keyboard,
 )
 from src.telegram.widgets import extract_tg_emoji
+
+
+def build_error_report(
+    event: ErrorEvent,
+    log_context: str,
+    traceback_str: str,
+    now: Optional[datetime] = None,
+) -> tuple[str, str]:
+    """Return (filename, content) of the error report sent to admins.
+
+    Filename: `error_<YYYY-MM-DD_HH-MM-SS>_<8 hex of event_id>.txt` in the app timezone.
+    """
+    timestamp = event.occurred_at if now is None else now
+    if timestamp is None:
+        timestamp = datetime_now()
+    short_id = event.event_id.hex[:8]
+    filename = f"error_{timestamp.strftime('%Y-%m-%d_%H-%M-%S')}_{short_id}.txt"
+    exception = event.exception
+    content = (
+        f"Time: {timestamp.strftime('%Y-%m-%d %H:%M:%S %Z').strip()}\n"
+        f"Event ID: {event.event_id}\n"
+        f"Exception: {type(exception).__name__}: {exception}\n\n"
+        "=== LOG CONTEXT (last 100 lines) ===\n\n"
+        f"{log_context}\n\n"
+        "=== EXCEPTION ===\n\n"
+        f"{traceback_str}"
+    )
+    return filename, content
 
 
 class NotificationService(Notifier):
@@ -216,18 +246,12 @@ class NotificationService(Notifier):
 
         from src.core.logger import log_buffer  # noqa: PLC0415
 
-        log_context = log_buffer.get_context()
-        file_content = (
-            "=== LOG CONTEXT (last 100 lines) ===\n\n"
-            f"{log_context}\n\n"
-            "=== EXCEPTION ===\n\n"
-            f"{traceback_str}"
-        )
+        filename, file_content = build_error_report(event, log_buffer.get_context(), traceback_str)
 
         media = MediaDescriptorDto(
             kind="bytes",
             value=base64.b64encode(file_content.encode("utf-8")).decode(),
-            filename=f"error_{event.event_id}.txt",
+            filename=filename,
         )
 
         await self.notify_system(

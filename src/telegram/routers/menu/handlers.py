@@ -90,8 +90,9 @@ async def on_get_trial(
     plan = await get_available_trial.system(user)
 
     if not plan:
+        # e.g. trial button pressed on an old menu message after the trial was used
         await notifier.notify_user(user=user, i18n_key="ntf-common.trial-unavailable")
-        raise ValueError("Trial plan not exist")
+        return
 
     settings = await settings_dao.get()
     currency = settings.default_currency

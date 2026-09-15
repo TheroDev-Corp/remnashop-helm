@@ -54,13 +54,17 @@ class EventTypedMiddleware(BaseMiddleware, ABC):
             f"{', '.join(t.value for t in self.__event_types__)}"
         )
 
-    def setup_outer(self, router: Router) -> None:
-        for event_type in self.__event_types__:
+    def setup_outer(
+        self,
+        router: Router,
+        event_types: Optional[list[MiddlewareEventType]] = None,
+    ) -> None:
+        types = self.__event_types__ if event_types is None else event_types
+        for event_type in types:
             router.observers[event_type].outer_middleware(self)
 
         logger.debug(
-            f"{self.__class__.__name__} set as OUTER for: "
-            f"{', '.join(t.value for t in self.__event_types__)}"
+            f"{self.__class__.__name__} set as OUTER for: {', '.join(t.value for t in types)}"
         )
 
     @abstractmethod

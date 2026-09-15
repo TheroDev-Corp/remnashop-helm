@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Integer
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.enums import Currency, PaymentGatewayType, PurchaseType, TransactionStatus
@@ -33,5 +34,19 @@ class Transaction(BaseSql, TimestampMixin):
     pricing: Mapped[dict[str, Any]]
     currency: Mapped[Currency]
     plan_snapshot: Mapped[dict[str, Any]]
+
+    # Fulfilment is tracked separately from the payment status: COMPLETED means "paid" (and is
+    # what statistics count), fulfilled_at means the subscription was granted. A COMPLETED row
+    # with fulfilled_at IS NULL is retried by the reconciliation task.
+    fulfilled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    fulfillment_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+    # Lease while an attempt runs, then the backoff deadline after a failure.
+    fulfillment_next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    fulfillment_error: Mapped[Optional[str]] = mapped_column(String)
 
     user: Mapped["User"] = relationship(foreign_keys=[user_id])

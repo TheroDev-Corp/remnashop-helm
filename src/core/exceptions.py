@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Union
+from typing import Optional, Union
 
 
 class MenuRenderError(Exception): ...
@@ -16,6 +16,28 @@ class UserNotFoundError(Exception):
 
 class RemnaUserBindingError(ValueError):
     """Raised when a bot user would be bound to a Remnawave user that belongs to someone else."""
+
+
+class RemnawaveActionError(ValueError):
+    """The panel rejected a user action (e.g. enable/disable) with a client error."""
+
+    def __init__(
+        self,
+        action: str,
+        remna_id: int,
+        status_code: int,
+        code: Optional[str],
+        message: Optional[str],
+    ) -> None:
+        self.action = action
+        self.remna_id = remna_id
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        super().__init__(
+            f"Remnawave refused action '{action}' for RemnaUser '{remna_id}': "
+            f"HTTP {status_code}, code '{code}', message '{message}'"
+        )
 
 
 class FileNotFoundError(Exception): ...

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable, Optional, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -34,6 +34,40 @@ class TransactionDao(Protocol):
     ) -> Optional[TransactionDto]: ...
 
     async def exists(self, payment_id: UUID) -> bool: ...
+
+    async def claim_fulfillment(
+        self,
+        payment_id: UUID,
+        max_attempts: int,
+        lease: timedelta,
+    ) -> Optional[int]:
+        """Atomically start a fulfilment attempt of a paid (COMPLETED), unfulfilled transaction.
+
+        Returns the attempt number, or None when it is already fulfilled, not paid, out of
+        attempts, or another attempt holds the lease / the backoff has not elapsed.
+        """
+        ...
+
+    async def mark_fulfilled(self, payment_id: UUID) -> bool:
+        """Set fulfilled_at once; False if it was already set (must run in the same DB
+        transaction as the subscription write)."""
+        ...
+
+    async def mark_fulfillment_failed(
+        self,
+        payment_id: UUID,
+        retry_at: datetime,
+        error: str,
+    ) -> bool:
+        """Record a failed attempt and its retry deadline; True on the first recorded failure."""
+        ...
+
+    async def get_unfulfilled_payment_ids(
+        self,
+        max_attempts: int,
+        grace: timedelta,
+        limit: int = 50,
+    ) -> list[UUID]: ...
 
     async def cancel_old(self, minutes: int = 30) -> int: ...
 

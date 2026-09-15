@@ -61,6 +61,8 @@ ntf-user =
     .transactions-empty = ❌ <i>Список транзакций пуст.</i>
     .subscription-empty = ❌ <i>Активная подписка не найдена.</i>
     .subscription-deleted = ✅ <i>Подписка успешно удалена.</i>
+    .subscription-toggle-failed = ❌ <i>Панель отклонила изменение статуса подписки: { $error }</i>
+    .subscription-remna-not-found = ❌ <i>Пользователь в панели не найден, статус подписки не изменён.</i>
     .plans-empty = ❌ <i>Нет доступных планов.</i>
     .devices-empty = ❌ <i>Список устройств пуст.</i>
     .allowed-plans-empty = ❌ <i>Нет доступных планов для предоставления доступа.</i>
@@ -111,6 +113,7 @@ ntf-gateway =
     .test-payment-created = ✅ <i><a href="{ $url }">Тестовый платеж</a> успешно создан.</i>
     .test-payment-error = ❌ <i>Ошибка при создании тестового платежа.</i>
     .test-payment-confirmed = ✅ <i>Тестовый платеж успешно обработан.</i>
+    .payment-fulfillment-pending = ⏳ <i>Платеж получен. Доступ настраивается и будет выдан автоматически. Если этого не произойдет в течение часа, обратитесь в поддержку.</i>
     .field-reset = ✅ <i>Значение поля очищено.</i>
     .field-reset-deactivated = ✅ <i>Значение поля очищено. Шлюз отключён: не хватает обязательных настроек.</i>
 
