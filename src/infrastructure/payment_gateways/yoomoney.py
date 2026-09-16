@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Final, Union
 from urllib.parse import parse_qs, quote
 from uuid import UUID
@@ -15,6 +15,7 @@ from loguru import logger
 from src.application.dto import (
     PaymentGatewayDto,
     PaymentResultDto,
+    TransactionDto,
 )
 from src.application.dto.payment_gateway import YooMoneyGatewaySettingsDto
 from src.core.config import AppConfig
@@ -30,6 +31,7 @@ class YoomoneyGateway(BasePaymentGateway):
     API_BASE: Final[str] = "https://yoomoney.ru"
     PAY_FORM: Final[str] = "button"
     PAY_TYPE: Final[str] = "AC"
+    RUB_CODE: Final[str] = "643"
 
     def __init__(self, gateway: PaymentGatewayDto, bot: Bot, config: AppConfig) -> None:
         super().__init__(gateway, bot, config)
@@ -87,9 +89,36 @@ class YoomoneyGateway(BasePaymentGateway):
             raise ValueError("Required field 'label' is missing")
 
         payment_id = UUID(payment_id_str)
-        transaction_status = TransactionStatus.COMPLETED
 
-        return payment_id, transaction_status
+        # A signed notification only proves YooMoney sent it: held (unaccepted) or protected
+        # (codepro) transfers are not received money yet, and the currency must be RUB.
+        if webhook_data.get("unaccepted") == "true" or webhook_data.get("codepro") == "true":
+            logger.warning(f"YooMoney transfer for '{payment_id}' is not credited yet, ignoring")
+            raise PermissionError("YooMoney transfer is not accepted")
+        if webhook_data.get("currency", self.RUB_CODE) != self.RUB_CODE:
+            logger.warning(f"YooMoney transfer for '{payment_id}' has unexpected currency")
+            raise PermissionError("YooMoney transfer currency mismatch")
+
+        return payment_id, TransactionStatus.COMPLETED
+
+    async def verify_paid_amount(self, request: Request, transaction: TransactionDto) -> bool:
+        # Quickpay forms are built client-side, so the payer controls `sum`: compare what was
+        # actually charged with the transaction price.
+        webhook_data = await self._get_webhook_data(request)
+        raw_amount = webhook_data.get("withdraw_amount")
+        try:
+            paid = Decimal(str(raw_amount))
+        except (InvalidOperation, ValueError):
+            logger.warning(f"YooMoney notification has invalid withdraw_amount {raw_amount!r}")
+            return False
+
+        if paid < transaction.pricing.final_amount:
+            logger.critical(
+                f"YooMoney underpayment for '{transaction.payment_id}': "
+                f"paid '{paid}', expected '{transaction.pricing.final_amount}'"
+            )
+            return False
+        return True
 
     async def _get_webhook_data(self, request: Request) -> dict:
         try:

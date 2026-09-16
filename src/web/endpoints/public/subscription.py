@@ -3,6 +3,7 @@ from typing import Optional
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, HTTPException, status
+from loguru import logger
 from remnapy.models.hwid import HwidDeviceDto
 
 from src.application.common import Remnawave
@@ -142,21 +143,12 @@ async def get_current_subscription(
     if not current_subscription:
         return None
 
-    remna_user = None
-    if user.telegram_id:
-        remna_users = await remnawave.get_users_by_telegram_id(user.telegram_id)
-        if remna_users:
-            remna_user = remna_users[0]
-
-    if not remna_user and current_subscription.user_remna_id > 0:
-        remna_user = await remnawave.get_user_by_id(current_subscription.user_remna_id)
-        if (
-            remna_user
-            and user.telegram_id
-            and remna_user.telegram_id
-            and remna_user.telegram_id != user.telegram_id
-        ):
-            remna_user = None
+    try:
+        remna_user = await remnawave.resolve_user(user, current_subscription.user_remna_id)
+    except Exception as e:
+        # Usage stats are optional here; the local subscription is still returned.
+        logger.warning(f"Failed to resolve RemnaUser for {user.log}: {e}")
+        remna_user = None
 
     return SubscriptionInfoResponse(
         user_remna_id=str(current_subscription.user_remna_id),
@@ -186,7 +178,14 @@ async def get_subscription_devices(
     if not current_subscription:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
 
-    devices = await remnawave.get_devices(current_subscription.user_remna_id)
+    # Never expose devices of a panel user merely because its id is stored locally.
+    try:
+        remna_user = await remnawave.resolve_user(user, current_subscription.user_remna_id)
+    except Exception as e:
+        # Same as get_devices: a panel outage returns an empty list instead of a 500.
+        logger.warning(f"Failed to resolve RemnaUser for {user.log}: {e}")
+        remna_user = None
+    devices = await remnawave.get_devices(remna_user.id) if remna_user else []
     return DevicesResponse(
         devices=[_to_device_response(device) for device in devices],
         current_count=len(devices),
@@ -201,10 +200,15 @@ async def delete_subscription_device(
     user: CurrentUser,
     delete_user_device: FromDishka[DeleteUserDevice],
 ) -> DeviceDeleteResponse:
-    deleted = await delete_user_device(
-        user,
-        DeleteUserDeviceDto(user_id=user.id, hwid=hwid),
-    )
+    try:
+        deleted = await delete_user_device(
+            user,
+            DeleteUserDeviceDto(user_id=user.id, hwid=hwid),
+        )
+    except CooldownError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     return DeviceDeleteResponse(deleted=deleted)
 
 
@@ -259,10 +263,20 @@ async def activate_promocode_web(
     return PromocodeActivateResponse(success=True, reward_type=promo.reward_type.value)
 
 
+async def _assert_no_current_subscription(user: UserDto, subscription_dao: SubscriptionDao) -> None:
+    # The bot offers the trial only without a current subscription; a trial would replace it.
+    if await subscription_dao.get_current(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Trial is not available with an existing subscription",
+        )
+
+
 @router.post("/trial", response_model=TrialActivateResponse)
 @inject
 async def activate_trial_web(
     user: CurrentUser,
+    subscription_dao: FromDishka[SubscriptionDao],
     settings_dao: FromDishka[SettingsDao],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
     pricing_service: FromDishka[PricingService],
@@ -270,6 +284,7 @@ async def activate_trial_web(
     activate_trial: FromDishka[ActivateTrialSubscription],
 ) -> TrialActivateResponse:
     _assert_web_purchase_email_verified(user)
+    await _assert_no_current_subscription(user, subscription_dao)
 
     plan = await get_available_trial.system(user)
     if not plan or not plan.durations:
@@ -334,6 +349,7 @@ async def activate_trial_web(
 async def purchase_trial_web(
     body: TrialPurchaseRequest,
     user: CurrentUser,
+    subscription_dao: FromDishka[SubscriptionDao],
     settings_dao: FromDishka[SettingsDao],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
     pricing_service: FromDishka[PricingService],
@@ -342,6 +358,7 @@ async def purchase_trial_web(
     process_payment: FromDishka[ProcessPayment],
 ) -> PaymentInitResponse:
     _assert_web_purchase_email_verified(user)
+    await _assert_no_current_subscription(user, subscription_dao)
     await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao)
 
     plan = await get_available_trial.system(user)
@@ -489,6 +506,12 @@ async def extend_subscription(
     current_subscription = await subscription_dao.get_current(user.id)
     if not current_subscription:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    if current_subscription.is_unlimited:
+        # RENEW adds days to expire_at: an unlimited subscription would gain nothing.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unlimited subscription cannot be extended",
+        )
 
     available_plans = await get_available_plans.system(user)
     matched_plan = await match_plan.system(

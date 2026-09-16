@@ -41,20 +41,23 @@ class DeleteUser(Interactor[DeleteUserDto, None]):
                 raise PermissionDeniedError("Cannot delete user with equal or higher role")
 
             subscription = await self.subscription_dao.get_current(target_user.id)
-            remna_id = None
-            if subscription:
-                remna_id = subscription.user_remna_id
-            elif target_user.telegram_id:
-                remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
-                if remna_users:
-                    remna_id = remna_users[0].id
 
-            if remna_id:
+            if subscription or target_user.telegram_id:
+                # Only ever delete a panel user verified to belong to target_user.
+                stored_id = subscription.user_remna_id if subscription else None
                 try:
-                    await self.remnawave.delete_user(remna_id)
+                    remna_user = await self.remnawave.resolve_user(target_user, stored_id)
+                    if remna_user is None:
+                        logger.warning(
+                            f"No RemnaUser owned by {target_user.log} found "
+                            f"(stored ID '{stored_id}'), skipping panel deletion"
+                        )
+                    else:
+                        await self.remnawave.delete_user(remna_user.id)
                 except Exception as e:
                     logger.warning(
-                        f"Failed to delete RemnaUser '{remna_id}' for user '{data.user_id}': {e}"
+                        f"Failed to delete RemnaUser (stored ID '{stored_id}') "
+                        f"for user '{data.user_id}': {e}"
                     )
 
             if subscription:

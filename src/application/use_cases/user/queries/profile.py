@@ -9,8 +9,10 @@ from remnapy.models.hwid import HwidDeviceDto
 from src.application.common import Interactor, Remnawave
 from src.application.common.dao import SettingsDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
+from src.application.common.uow import UnitOfWork
 from src.application.dto import SubscriptionDto, UserDto
 from src.core.config import AppConfig
+from src.core.exceptions import RemnaUserBindingError
 from src.core.types import RemnaUserDto
 
 
@@ -61,7 +63,7 @@ class GetUserProfile(Interactor[int, GetUserProfileResultDto]):
 @dataclass(frozen=True)
 class GetUserProfileSubscriptionResultDto:
     subscription: SubscriptionDto
-    remna_user: RemnaUserDto
+    remna_user: Optional[RemnaUserDto]
     last_node_name: Optional[str] = None
     external_squad: Optional[GetExternalSquadByUuidResponseDto] = None
 
@@ -71,7 +73,7 @@ class GetUserProfileSubscriptionResultDto:
 
     @property
     def formatted_internal_squads(self) -> Optional[str]:
-        if not self.remna_user.active_internal_squads:
+        if not self.remna_user or not self.remna_user.active_internal_squads:
             return None
         return ", ".join(s.name for s in self.remna_user.active_internal_squads)
 
@@ -87,11 +89,13 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
 
     def __init__(
         self,
+        uow: UnitOfWork,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
         remnawave: Remnawave,
         remnawave_sdk: RemnawaveSDK,
     ) -> None:
+        self.uow = uow
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
@@ -109,27 +113,26 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
         if not subscription:
             raise ValueError(f"Current subscription for user '{user_id}' not found")
 
-        remna_user = None
-        if target_user.telegram_id:
-            remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
-            if remna_users:
-                remna_user = remna_users[0]
-                if subscription.user_remna_id != remna_user.id:
+        remna_user = await self.remnawave.resolve_user(target_user, subscription.user_remna_id)
+        if not remna_user:
+            # Still render the window: its Delete/Reissue actions are how an admin cleans up an
+            # orphaned subscription (DeleteSubscription handles a missing owned panel user).
+            logger.warning(f"{actor.log} No RemnaUser owned by user '{user_id}' found")
+            return GetUserProfileSubscriptionResultDto(subscription=subscription, remna_user=None)
+
+        if subscription.user_remna_id != remna_user.id:
+            # Heal only from a resolve_user result (ownership already verified).
+            logger.warning(
+                f"{actor.log} Healing user_remna_id for user '{user_id}': "
+                f"'{subscription.user_remna_id}' -> '{remna_user.id}'"
+            )
+            try:
+                async with self.uow:
                     subscription.user_remna_id = remna_user.id
                     await self.subscription_dao.update(subscription)
-
-        if not remna_user and subscription.user_remna_id > 0:
-            remna_user = await self.remnawave.get_user_by_id(subscription.user_remna_id)
-            if (
-                remna_user
-                and target_user.telegram_id
-                and remna_user.telegram_id
-                and remna_user.telegram_id != target_user.telegram_id
-            ):
-                remna_user = None
-
-        if not remna_user:
-            raise ValueError(f"User Remnawave for '{user_id}' not found")
+                    await self.uow.commit()
+            except RemnaUserBindingError as e:
+                logger.error(f"{actor.log} Failed to heal user_remna_id for '{user_id}': {e}")
 
         last_node = None
         if remna_user.last_connected_node_uuid:
@@ -144,9 +147,14 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
 
         external_squad = None
         if remna_user.external_squad_uuid:
-            external_squad = await self.remnawave_sdk.external_squads.get_external_squad_by_uuid(
-                uuid=remna_user.external_squad_uuid
-            )
+            try:
+                external_squad = (
+                    await self.remnawave_sdk.external_squads.get_external_squad_by_uuid(
+                        uuid=remna_user.external_squad_uuid
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Failed to fetch external squad info: {e}")
 
         return GetUserProfileSubscriptionResultDto(
             subscription=subscription,
@@ -186,7 +194,14 @@ class GetUserDevices(Interactor[int, GetUserDevicesResultDto]):
         if not subscription:
             raise ValueError(f"Subscription for '{user_id}' not found")
 
-        devices = await self.remnawave.get_devices(subscription.user_remna_id)
+        # Never list devices of a panel user merely because its id is stored locally.
+        try:
+            remna_user = await self.remnawave.resolve_user(target_user, subscription.user_remna_id)
+        except Exception as e:
+            # Same as get_devices: a panel outage shows an empty list instead of an error.
+            logger.warning(f"{actor.log} Failed to resolve RemnaUser for '{user_id}': {e}")
+            remna_user = None
+        devices = await self.remnawave.get_devices(remna_user.id) if remna_user else []
 
         logger.info(f"{actor.log} Retrieved '{len(devices)}' devices for user '{user_id}'")
 

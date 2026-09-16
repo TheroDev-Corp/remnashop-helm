@@ -12,6 +12,7 @@ from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
 from src.application.common import Notifier
+from src.application.common.dao import PlanDao
 from src.application.dto import PlanSnapshotDto, PromocodeDto
 from src.application.use_cases.promocode.commands.manage import (
     CreatePromocode,
@@ -21,7 +22,6 @@ from src.application.use_cases.promocode.commands.manage import (
 )
 from src.application.use_cases.promocode.queries.generate import GeneratePromocodeCode
 from src.application.use_cases.promocode.queries.get import GetPromocode
-from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.constants import TIMEZONE, USER_KEY
 from src.core.enums import PromocodeAvailability, PromocodeRewardType
 from src.core.utils.time import datetime_now
@@ -149,7 +149,11 @@ async def on_promo_confirm(
         logger.info(f"{user.log} Created promocode '{promo.code}'")
         await notifier.notify_user(user, i18n_key="ntf-promocode.created")
     else:
-        await update_promocode(user, promo)
+        try:
+            await update_promocode(user, promo)
+        except ValueError:
+            await notifier.notify_user(user, i18n_key="ntf-promocode.code-exists")
+            return
         logger.info(f"{user.log} Updated promocode '{promo.code}'")
         await notifier.notify_user(user, i18n_key="ntf-promocode.updated")
 
@@ -289,10 +293,10 @@ async def on_plan_open(
     widget: Button,
     dialog_manager: DialogManager,
     notifier: FromDishka[Notifier],
-    get_available_plans: FromDishka[GetAvailablePlans],
+    plan_dao: FromDishka[PlanDao],
 ) -> None:
     user = dialog_manager.middleware_data[USER_KEY]
-    plans = await get_available_plans.system(user)
+    plans = await plan_dao.get_active_plans()
     if not plans:
         await notifier.notify_user(user, i18n_key="ntf-promocode.plans-empty")
         return
@@ -316,12 +320,11 @@ async def on_plan_duration_select(
     widget: Button,
     dialog_manager: DialogManager,
     retort: FromDishka[Retort],
-    get_available_plans: FromDishka[GetAvailablePlans],
+    plan_dao: FromDishka[PlanDao],
 ) -> None:
-    user = dialog_manager.middleware_data[USER_KEY]
     plan_id = dialog_manager.dialog_data.get(PROMO_PLAN_ID_KEY)
     days = int(dialog_manager.item_id)  # type: ignore[attr-defined]
-    plans = await get_available_plans.system(user)
+    plans = await plan_dao.get_active_plans()
     plan = next((p for p in plans if p.id == plan_id), None)
     if plan is None or plan.get_duration(days) is None:
         return

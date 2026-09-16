@@ -59,7 +59,10 @@ class PromocodeDaoImpl(PromocodeDao):
                 if key == "code":
                     value = value.upper()
                 setattr(db, key, value)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            raise ValueError(f"Promocode with code '{promocode.code}' already exists")
         # Reload eagerly: the server-side ``onupdate`` expires ``updated_at`` after the
         # UPDATE, and the sync DTO converter cannot lazy-load it inside the async session.
         await self.session.refresh(db)

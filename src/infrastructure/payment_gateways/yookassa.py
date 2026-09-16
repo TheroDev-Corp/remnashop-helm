@@ -111,14 +111,22 @@ class YookassaGateway(BasePaymentGateway):
             raise PermissionError("Webhook verification failed")
 
         webhook_data = await self._get_webhook_data(request)
+        event = str(webhook_data.get("event", ""))
+        if not event.startswith("payment."):
+            # e.g. refund.succeeded: object.id is a refund id, not a payment we can look up.
+            logger.info(f"Ignoring non-payment YooKassa event '{event}'")
+            return None
+
         payment_object: dict = webhook_data.get("object", {})
         payment_id_str = payment_object.get("id")
 
         if not payment_id_str:
             raise ValueError("Required field 'id' is missing")
 
-        status = payment_object.get("status")
         payment_id = UUID(payment_id_str)
+        # The IP check relies on proxy headers a client can forge: take the status from the
+        # YooKassa API, never from the notification body.
+        status = await self._fetch_payment_status(payment_id_str)
 
         match status:
             case "succeeded":
@@ -129,6 +137,21 @@ class YookassaGateway(BasePaymentGateway):
                 raise ValueError(f"Unsupported status: {status}")
 
         return payment_id, transaction_status
+
+    async def _fetch_payment_status(self, payment_id: str) -> str:
+        try:
+            response = await self._client.get(f"v3/payments/{payment_id}")
+            response.raise_for_status()
+            data = orjson.loads(response.content)
+        except Exception as e:
+            logger.warning(f"Failed to confirm YooKassa payment '{payment_id}': {e}")
+            raise PermissionError("Webhook verification failed") from e
+
+        if not isinstance(data, dict) or str(data.get("id")) != payment_id:
+            logger.warning(f"YooKassa API returned a different payment for '{payment_id}'")
+            raise PermissionError("Webhook verification failed")
+
+        return str(data.get("status"))
 
     async def _create_payment_payload(self, amount: str, details: str) -> dict[str, Any]:
         return {
@@ -166,10 +189,28 @@ class YookassaGateway(BasePaymentGateway):
         return PaymentResultDto(id=UUID(payment_id_str), url=str(payment_url))
 
     def _verify_webhook(self, request: Request) -> bool:
-        ip = self._get_ip(request.headers)
+        ip = self._get_client_ip(request)
 
         if not self._is_ip_trusted(ip):
             logger.critical(f"Webhook received from untrusted IP: '{ip}'")
             return False
 
         return True
+
+    def _get_client_ip(self, request: Request) -> str:
+        config = getattr(self, "config", None)
+        trusted_proxies = [net for net in (config.trusted_proxies if config else []) if net]
+
+        if not trusted_proxies:
+            # Legacy default: forwarded headers are honored from any peer.
+            return self._get_ip(request.headers)
+
+        peer = request.client.host if request.client else None
+        if not peer:
+            raise PermissionError("Client address not available")
+
+        if any(self._is_ip_in_network(peer, net) for net in trusted_proxies):
+            # X-Forwarded-For may be a chain: the left-most entry is the original client.
+            return self._get_ip(request.headers).split(",")[0].strip()
+
+        return peer

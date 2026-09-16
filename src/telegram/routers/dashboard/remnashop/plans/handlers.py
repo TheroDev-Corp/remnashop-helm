@@ -88,14 +88,14 @@ async def on_import_input(
         await notifier.notify_user(user, i18n_key="ntf-plan.not-file")
         return
 
-    file_in_memory = io.BytesIO()
-    await bot.download(message.document.file_id, destination=file_in_memory)
-    content = file_in_memory.getvalue().decode("utf-8")
     logger.info(
         f"{user.log} Received import file '{message.document.file_name}' and started processing"
     )
 
     try:
+        file_in_memory = io.BytesIO()
+        await bot.download(message.document.file_id, destination=file_in_memory)
+        content = file_in_memory.getvalue().decode("utf-8")
         plans = await parse_plans(user, content)
 
         if len(plans) == 1:

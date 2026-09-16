@@ -6,13 +6,13 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 
 from src.application.common import TranslatorRunner
+from src.application.common.dao import PlanDao
 from src.application.common.policy import Permission, PermissionPolicy
 from src.application.dto import PromocodeDto
 from src.application.use_cases.promocode.queries.get import (
     GetPromocodeList,
     GetPromocodeListDto,
 )
-from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.constants import USER_KEY
 from src.core.enums import PromocodeAvailability, PromocodeRewardType
 
@@ -123,12 +123,12 @@ async def getter_type_select(**kwargs: Any) -> dict[str, Any]:
 @inject
 async def getter_plan_select(
     dialog_manager: DialogManager,
-    get_available_plans: FromDishka[GetAvailablePlans],
+    plan_dao: FromDishka[PlanDao],
     i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    user = dialog_manager.middleware_data[USER_KEY]
-    plans = await get_available_plans.system(user)
+    # All active plans: the admin's own eligibility is irrelevant to the promocode target.
+    plans = await plan_dao.get_active_plans()
     return {
         "plans": [{"id": p.id, "name": i18n.get(p.name)} for p in plans],
     }
@@ -137,12 +137,11 @@ async def getter_plan_select(
 @inject
 async def getter_plan_duration_select(
     dialog_manager: DialogManager,
-    get_available_plans: FromDishka[GetAvailablePlans],
+    plan_dao: FromDishka[PlanDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    user = dialog_manager.middleware_data[USER_KEY]
     plan_id = dialog_manager.dialog_data.get(PROMO_PLAN_ID_KEY)
-    plans = await get_available_plans.system(user)
+    plans = await plan_dao.get_active_plans()
     plan = next((p for p in plans if p.id == plan_id), None)
     durations = plan.durations if plan else []
     return {

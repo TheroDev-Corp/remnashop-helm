@@ -11,7 +11,7 @@ from loguru import logger
 from redis.asyncio import Redis
 
 from src.application.common import BotService, Remnawave
-from src.application.common.dao import SettingsDao
+from src.application.common.dao import SettingsDao, SubscriptionDao
 from src.application.events import (
     BotInlineModeDisabledEvent,
     BotShutdownEvent,
@@ -35,6 +35,34 @@ from src.infrastructure.services import (
     WebhookService,
 )
 from src.web.endpoints import TelegramWebhookEndpoint
+
+
+async def _log_remna_id_conflicts(container: AsyncContainer) -> None:
+    """Warn about Remnawave user IDs shared by several users' current subscriptions.
+
+    Such rows make admin actions on one user hit another user's panel account. Read-only and
+    failure-tolerant: runs in its own request scope so a failed query cannot poison startup.
+    """
+    try:
+        async with container(scope=Scope.REQUEST) as request_container:
+            subscription_dao = await request_container.get(SubscriptionDao)
+            conflicts = await subscription_dao.get_remna_id_conflicts()
+    except Exception as e:
+        logger.warning(f"Failed to check subscriptions for shared Remnawave user IDs: '{e}'")
+        return
+
+    if not conflicts:
+        return
+
+    details = "; ".join(
+        f"remna_id={c.user_remna_id} user_ids={c.user_ids} telegram_ids={c.telegram_ids}"
+        for c in conflicts
+    )
+    logger.warning(
+        f"Found '{len(conflicts)}' Remnawave user IDs bound to current subscriptions of "
+        f"different users. Actions on these users may affect the wrong panel account; "
+        f"fix them manually: {details}"
+    )
 
 
 @asynccontextmanager
@@ -89,6 +117,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await event_bus.publish(webhook_error_event)
 
         await command_service.setup_commands()
+
+    await _log_remna_id_conflicts(container)
 
     await telegram_webhook_endpoint.startup()
 

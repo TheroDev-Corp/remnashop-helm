@@ -4,15 +4,70 @@ from typing import Optional
 from uuid import UUID
 
 from loguru import logger
-from remnapy import RemnawaveSDK
 
 from src.application.common import Interactor, Remnawave
 from src.application.common.dao import SettingsDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
-from src.application.dto import RequirementSettingsDto, SettingsDto, UserDto
+from src.application.dto import RequirementSettingsDto, SettingsDto, SubscriptionDto, UserDto
 from src.core.enums import SubscriptionStatus
+from src.core.exceptions import PermissionDeniedError, RemnaUserBindingError
 from src.core.utils.time import datetime_now
+
+
+async def resolve_owned_remna_id(
+    remnawave: Remnawave,
+    subscription_dao: SubscriptionDao,
+    user: UserDto,
+    subscription: SubscriptionDto,
+) -> Optional[int]:
+    """Return the ID of the panel user really owned by `user`, healing the stored ID.
+
+    Must be called inside the caller's UoW: a re-resolved ID is persisted via `subscription_dao`.
+    Returns None when no panel user owned by `user` exists; the stored ID is then NOT usable.
+    """
+    remna_user = await remnawave.resolve_user(user, subscription.user_remna_id)
+    if remna_user is None:
+        logger.warning(
+            f"No RemnaUser owned by {user.log} found (stored ID '{subscription.user_remna_id}')"
+        )
+        return None
+
+    if remna_user.id != subscription.user_remna_id:
+        logger.warning(
+            f"Healing RemnaUser ID of subscription '{subscription.id}' for {user.log}: "
+            f"'{subscription.user_remna_id}' -> '{remna_user.id}'"
+        )
+        subscription.user_remna_id = remna_user.id
+        await subscription_dao.update(subscription)
+
+    return remna_user.id
+
+
+async def resolve_bindable_remna_id(
+    remnawave: Remnawave,
+    subscription_dao: SubscriptionDao,
+    user: UserDto,
+    stored_remna_id: Optional[int],
+) -> int:
+    """Resolve the panel user owned by `user` and make sure no other user's current subscription
+    holds it — BEFORE the panel is mutated, so a later DB refusal cannot leave them diverged.
+
+    Returns the id to pass to `update_user`, or 0 when `user` owns no panel user (update_user
+    then creates a fresh one). Raises RemnaUserBindingError on a conflict.
+    """
+    remna_user = await remnawave.resolve_user(user, stored_remna_id)
+    if remna_user is None:
+        return 0
+    await subscription_dao.ensure_remna_id_available(remna_user.id, user.id)
+    return remna_user.id
+
+
+def ensure_can_edit_subscription(actor: UserDto, target_user: UserDto) -> None:
+    """Refuse editing another user's subscription unless the actor's role is strictly higher."""
+    if actor.id != target_user.id and not actor.role > target_user.role:
+        logger.warning(f"{actor.log} denied editing subscription of {target_user.log}")
+        raise PermissionDeniedError()
 
 
 class ToggleSubscriptionStatus(Interactor[int, SubscriptionStatus]):
@@ -34,6 +89,7 @@ class ToggleSubscriptionStatus(Interactor[int, SubscriptionStatus]):
         target_user = await self.user_dao.get_by_id(user_id)
         if not target_user:
             raise ValueError(f"User '{user_id}' not found")
+        ensure_can_edit_subscription(actor, target_user)
         subscription = await self.subscription_dao.get_current(target_user.id)
 
         if not subscription:
@@ -46,11 +102,19 @@ class ToggleSubscriptionStatus(Interactor[int, SubscriptionStatus]):
         new_status = SubscriptionStatus.ACTIVE if is_now_active else SubscriptionStatus.DISABLED
 
         async with self.uow:
+            remna_id = await resolve_owned_remna_id(
+                self.remnawave, self.subscription_dao, target_user, subscription
+            )
+            if remna_id is None:
+                raise RemnaUserBindingError(
+                    f"No Remnawave user owned by {target_user.log} found, cannot toggle status"
+                )
+
             try:
                 if is_now_active:
-                    await self.remnawave.enable_user(subscription.user_remna_id)
+                    await self.remnawave.enable_user(remna_id)
                 else:
-                    await self.remnawave.disable_user(subscription.user_remna_id)
+                    await self.remnawave.disable_user(remna_id)
             except Exception as e:
                 logger.error(f"External API error for user '{user_id}' while toggling status: {e}")
                 raise
@@ -83,6 +147,7 @@ class DeleteSubscription(Interactor[int, None]):
         target_user = await self.user_dao.get_by_id(user_id)
         if not target_user:
             raise ValueError(f"User '{user_id}' not found")
+        ensure_can_edit_subscription(actor, target_user)
 
         subscription = await self.subscription_dao.get_current(target_user.id)
 
@@ -91,9 +156,19 @@ class DeleteSubscription(Interactor[int, None]):
 
         async with self.uow:
             try:
-                await self.remnawave.delete_user(subscription.user_remna_id)
+                remna_user = await self.remnawave.resolve_user(
+                    target_user, subscription.user_remna_id
+                )
+                if remna_user is None:
+                    # Never fall back to the stored ID: it may point at somebody else.
+                    logger.warning(
+                        f"No RemnaUser owned by {target_user.log} found "
+                        f"(stored ID '{subscription.user_remna_id}'), cleaning local state only"
+                    )
+                else:
+                    await self.remnawave.delete_user(remna_user.id)
             except Exception as e:
-                logger.error(f"Failed to delete user {target_user.log} from remnapy: {e}")
+                logger.error(f"Failed to delete user {target_user.log} from Remnawave: {e}")
                 raise
 
             await self.user_dao.clear_current_subscription(target_user.id)
@@ -132,18 +207,23 @@ class UpdateTrafficLimit(Interactor[UpdateTrafficLimitDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
 
             subscription = await self.subscription_dao.get_current(target_user.id)
             if not subscription:
                 raise ValueError(f"Subscription for '{target_user.remna_name}' not found")
 
             subscription.traffic_limit = data.traffic_limit
-            await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
+            remna_id = await resolve_bindable_remna_id(
+                self.remnawave, self.subscription_dao, target_user, subscription.user_remna_id
+            )
+            remna_user = await self.remnawave.update_user(
                 user=target_user,
-                id=subscription.user_remna_id,
+                id=remna_id,
                 subscription=subscription,
             )
+            subscription.user_remna_id = remna_user.id
+            await self.subscription_dao.update(subscription)
 
             await self.uow.commit()
 
@@ -178,18 +258,23 @@ class UpdateDeviceLimit(Interactor[UpdateDeviceLimitDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
 
             subscription = await self.subscription_dao.get_current(target_user.id)
             if not subscription:
                 raise ValueError(f"Subscription for '{target_user.remna_name}' not found")
 
             subscription.device_limit = data.device_limit
-            await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
+            remna_id = await resolve_bindable_remna_id(
+                self.remnawave, self.subscription_dao, target_user, subscription.user_remna_id
+            )
+            remna_user = await self.remnawave.update_user(
                 user=target_user,
-                id=subscription.user_remna_id,
+                id=remna_id,
                 subscription=subscription,
             )
+            subscription.user_remna_id = remna_user.id
+            await self.subscription_dao.update(subscription)
             await self.uow.commit()
 
         logger.info(
@@ -223,6 +308,7 @@ class ToggleInternalSquad(Interactor[ToggleInternalSquadDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
             subscription = await self.subscription_dao.get_current(target_user.id)
             if not subscription:
                 raise ValueError(f"Subscription for '{target_user.remna_name}' not found")
@@ -236,12 +322,16 @@ class ToggleInternalSquad(Interactor[ToggleInternalSquadDto, None]):
                 action = "Set"
 
             subscription.internal_squads = squads
-            await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
+            remna_id = await resolve_bindable_remna_id(
+                self.remnawave, self.subscription_dao, target_user, subscription.user_remna_id
+            )
+            remna_user = await self.remnawave.update_user(
                 user=target_user,
-                id=subscription.user_remna_id,
+                id=remna_id,
                 subscription=subscription,
             )
+            subscription.user_remna_id = remna_user.id
+            await self.subscription_dao.update(subscription)
             await self.uow.commit()
 
         logger.info(
@@ -275,6 +365,7 @@ class ToggleExternalSquad(Interactor[ToggleExternalSquadDto, None]):
             target_user = await self.user_dao.get_by_id(data.user_id)
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
             subscription = await self.subscription_dao.get_current(target_user.id)
             if not subscription:
                 raise ValueError(f"Subscription for '{target_user.remna_name}' not found")
@@ -287,12 +378,16 @@ class ToggleExternalSquad(Interactor[ToggleExternalSquadDto, None]):
                 action = "Set"
 
             subscription.external_squad = new_squad
-            await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
+            remna_id = await resolve_bindable_remna_id(
+                self.remnawave, self.subscription_dao, target_user, subscription.user_remna_id
+            )
+            remna_user = await self.remnawave.update_user(
                 user=target_user,
-                id=subscription.user_remna_id,
+                id=remna_id,
                 subscription=subscription,
             )
+            subscription.user_remna_id = remna_user.id
+            await self.subscription_dao.update(subscription)
             await self.uow.commit()
 
         logger.info(
@@ -328,6 +423,7 @@ class AddSubscriptionDuration(Interactor[AddSubscriptionDurationDto, None]):
 
             if not target_user or not subscription:
                 raise ValueError(f"Subscription data for user_id '{data.user_id}' not found")
+            ensure_can_edit_subscription(actor, target_user)
 
             new_expire = subscription.expire_at + timedelta(days=data.days)
 
@@ -335,12 +431,16 @@ class AddSubscriptionDuration(Interactor[AddSubscriptionDurationDto, None]):
                 raise ValueError(f"{actor.log} Invalid expire time for '{target_user.remna_name}'")
 
             subscription.expire_at = new_expire
-            await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
+            remna_id = await resolve_bindable_remna_id(
+                self.remnawave, self.subscription_dao, target_user, subscription.user_remna_id
+            )
+            remna_user = await self.remnawave.update_user(
                 user=target_user,
-                id=subscription.user_remna_id,
+                id=remna_id,
                 subscription=subscription,
             )
+            subscription.user_remna_id = remna_user.id
+            await self.subscription_dao.update(subscription)
 
             await self.uow.commit()
 
@@ -366,13 +466,13 @@ class DisableTrialSubscription(Interactor[ChannelMemberEventDto, Optional[UserDt
         settings_dao: SettingsDao,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave_sdk: RemnawaveSDK,
+        remnawave: Remnawave,
     ) -> None:
         self.uow = uow
         self.settings_dao = settings_dao
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
-        self.remnawave_sdk = remnawave_sdk
+        self.remnawave = remnawave
 
     async def _execute(self, actor: UserDto, data: ChannelMemberEventDto) -> Optional[UserDto]:
         settings = await self.settings_dao.get()
@@ -395,8 +495,15 @@ class DisableTrialSubscription(Interactor[ChannelMemberEventDto, Optional[UserDt
             return None
 
         async with self.uow:
+            remna_id = await resolve_owned_remna_id(
+                self.remnawave, self.subscription_dao, user, subscription
+            )
+            if remna_id is None:
+                logger.error(f"Cannot disable trial for {user.log}: no owned RemnaUser found")
+                return None
+
             try:
-                await self.remnawave_sdk.users.disable_user(subscription.user_remna_id)
+                await self.remnawave.disable_user(remna_id)
             except Exception as e:
                 logger.error(
                     f"Failed to disable trial in remnawave for user '{data.telegram_id}': {e}"
@@ -443,13 +550,13 @@ class EnableTrialSubscription(Interactor[ChannelMemberEventDto, Optional[UserDto
         settings_dao: SettingsDao,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave_sdk: RemnawaveSDK,
+        remnawave: Remnawave,
     ) -> None:
         self.uow = uow
         self.settings_dao = settings_dao
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
-        self.remnawave_sdk = remnawave_sdk
+        self.remnawave = remnawave
 
     async def _execute(self, actor: UserDto, data: ChannelMemberEventDto) -> Optional[UserDto]:
         settings = await self.settings_dao.get()
@@ -484,8 +591,15 @@ class EnableTrialSubscription(Interactor[ChannelMemberEventDto, Optional[UserDto
             return None
 
         async with self.uow:
+            remna_id = await resolve_owned_remna_id(
+                self.remnawave, self.subscription_dao, user, subscription
+            )
+            if remna_id is None:
+                logger.error(f"Cannot re-enable trial for {user.log}: no owned RemnaUser found")
+                return None
+
             try:
-                await self.remnawave_sdk.users.enable_user(subscription.user_remna_id)
+                await self.remnawave.enable_user(remna_id)
             except Exception as e:
                 logger.error(
                     f"Failed to enable trial in remnawave for user '{data.telegram_id}': {e}"

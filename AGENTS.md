@@ -56,8 +56,11 @@ tests/                     # Юнит- и интеграционные тест�
 * `UserDto.telegram_id` / `User.telegram_id` — реальный 64-битный ID пользователя в Telegram.
 * `SubscriptionDto.user_remna_id` — числовой идентификатор пользователя в панели Remnawave.
 
-**Важно при работе с Remnawave 3.x:**
-* Всегда реализовывать **fallback по `telegram_id`** и **auto-healing**: если при запросе по `user_remna_id` панель возвращает 404 или пользователя с другим `telegram_id` (сдвиг ID при миграциях), бот должен найти юзера через фильтр `telegramId` и автоматически обновить `user_remna_id` в PostgreSQL.
+**Важно при работе с Remnawave (поддерживается только 3.0.0+):**
+* **Никогда не доверять сохранённому `user_remna_id` и никогда не брать `[0]` из списка панели.** Фильтры `GET /users` работают через LIKE, а неизвестные query-параметры панель игнорирует и отдаёт весь список — так один юзер панели оказывался привязан к подпискам нескольких юзеров бота, и выключение одной подписки отключало чужой VPN.
+* Любое изменение юзера в панели (enable/disable/delete/reset/revoke/devices/drop) — только по ID из `Remnawave.resolve_user(user, subscription.user_remna_id)`: он проверяет владельца (`is_owned_by`: точный `telegramId`, иначе username `rs_<tg>` / email) и ищет по точному `telegramId`. Если вернул `None` — не трогать панель.
+* `update_user` / `create_user` сами перепроверяют владельца и могут вернуть другой `.id` — всегда сохранять возвращённый `.id` в подписку.
+* Auto-healing `user_remna_id` — только из результата `resolve_user`. `SubscriptionDao.create/update` отказывают (`RemnaUserBindingError`), если ID уже в текущей подписке другого юзера; при старте конфликты пишутся в лог.
 
 ### 3. Обработка платежей и вебхуков
 * Обработчики вебхуков платежных шлюзов (`src/infrastructure/payment_gateways/`) должны корректно обрабатывать тестовые пинги и технические уведомления (например, `test-notification` в YooMoney):

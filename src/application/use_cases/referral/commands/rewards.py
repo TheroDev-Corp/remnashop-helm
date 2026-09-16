@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import timedelta
 
 from loguru import logger
 
@@ -20,6 +21,7 @@ from src.application.use_cases.user.commands.profile_edit import (
     ChangeUserPointsDto,
 )
 from src.core.enums import PurchaseType, ReferralAccrualStrategy, ReferralLevel, ReferralRewardType
+from src.core.utils.time import datetime_now
 
 
 @dataclass(frozen=True)
@@ -71,9 +73,15 @@ class GiveReferrerReward(Interactor[GiveReferrerRewardDto, None]):
             )
 
         elif reward.type == ReferralRewardType.EXTRA_DAYS:
-            subscription = await self.subscription_dao.get_current(user.id)  # only active
+            subscription = await self.subscription_dao.get_current(user.id)
 
-            if not subscription or subscription.is_trial:
+            # get_current also returns long-expired subscriptions; AddSubscriptionDuration refuses
+            # an expiry that stays in the past, so report those like a missing subscription.
+            is_extendable = subscription is not None and (
+                subscription.expire_at + timedelta(days=reward.amount) >= datetime_now()
+            )
+
+            if not subscription or subscription.is_trial or not is_extendable:
                 logger.warning(
                     f"{actor.log} Current subscription not found "
                     f"for user '{user.remna_name}', unable to add days"

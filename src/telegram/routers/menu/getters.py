@@ -91,7 +91,10 @@ async def menu_getter(
                 trial_price_str = (
                     f"{raw_price.normalize():f} {currency.symbol}" if not trial_is_free else ""
                 )
-            data["trial_available"] = menu_data.is_trial_available and menu_data.available_trial
+            # Fluent selectors need a plain bool, not a PlanDto.
+            data["trial_available"] = bool(
+                menu_data.is_trial_available and menu_data.available_trial
+            )
             data["trial_is_free"] = trial_is_free
             data["trial_price"] = trial_price_str
             return data
@@ -156,7 +159,13 @@ async def devices_getter(
     if not current_subscription:
         raise ValueError(f"Current subscription for user '{user.telegram_id}' not found")
 
-    devices = await remnawave.get_devices(current_subscription.user_remna_id)
+    try:
+        remna_user = await remnawave.resolve_user(user, current_subscription.user_remna_id)
+    except Exception as e:
+        # Same as get_devices: a panel outage shows an empty list instead of crashing the view.
+        logger.warning(f"Failed to resolve RemnaUser for {user.log}: {e}")
+        remna_user = None
+    devices = await remnawave.get_devices(remna_user.id) if remna_user else []
 
     formatted_devices = [
         {

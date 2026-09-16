@@ -28,6 +28,10 @@ class MulenPayGateway(BasePaymentGateway):
     DEFAULT_PAYMENT_SUBJECT: Final[int] = 4
     DEFAULT_PAYMENT_MODE: Final[int] = 4
 
+    # GET v2/payments/{id} status: 3 = paid, 2 = canceled (string forms accepted as well).
+    PAID_STATUSES: Final[frozenset[str]] = frozenset({"3", "success", "paid"})
+    CANCELED_STATUSES: Final[frozenset[str]] = frozenset({"2", "cancel", "canceled"})
+
     def __init__(self, gateway: PaymentGatewayDto, bot: Bot, config: AppConfig) -> None:
         super().__init__(gateway, bot, config)
 
@@ -77,16 +81,16 @@ class MulenPayGateway(BasePaymentGateway):
 
         webhook_data = await self._get_webhook_data(request)
 
-        # MulenPay does not provide webhook signature verification
-        # if not self._verify_webhook(webhook_data):
-        #     raise PermissionError("Webhook verification failed")
-
         order_uuid = webhook_data.get("uuid")
         if not order_uuid:
             raise ValueError("Required field 'uuid' is missing")
 
-        payment_status = webhook_data.get("payment_status")
         payment_id = UUID(order_uuid)
+
+        # MulenPay callbacks are unsigned and the order uuid is returned to the payer: always
+        # confirm through the API. A `sign` in the body is not trusted — the create-request sign
+        # covers only currency/amount/shop, so it cannot authenticate a specific order or status.
+        payment_status = await self._fetch_confirmed_status(webhook_data, order_uuid)
 
         match payment_status:
             case "success":
@@ -97,6 +101,34 @@ class MulenPayGateway(BasePaymentGateway):
                 raise ValueError(f"Unsupported payment_status: {payment_status}")
 
         return payment_id, transaction_status
+
+    async def _fetch_confirmed_status(self, webhook_data: dict, order_uuid: str) -> str:
+        remote_id = webhook_data.get("id")
+        if not remote_id:
+            logger.warning("Unsigned MulenPay webhook without payment 'id', cannot confirm")
+            raise PermissionError("Webhook verification failed")
+
+        try:
+            response = await self._client.get(f"v2/payments/{remote_id}")
+            response.raise_for_status()
+            data = orjson.loads(response.content)
+        except Exception as e:
+            logger.warning(f"Failed to confirm MulenPay payment '{remote_id}': {e}")
+            raise PermissionError("Webhook verification failed") from e
+
+        payment = data.get("payment", data) if isinstance(data, dict) else None
+        if not isinstance(payment, dict) or str(payment.get("uuid")) != order_uuid:
+            logger.warning(f"MulenPay payment '{remote_id}' does not match order '{order_uuid}'")
+            raise PermissionError("Webhook verification failed")
+
+        remote_status = str(payment.get("status")).lower()
+        if remote_status in self.PAID_STATUSES:
+            return "success"
+        if remote_status in self.CANCELED_STATUSES:
+            return "cancel"
+
+        logger.warning(f"MulenPay payment '{remote_id}' is not final: status '{remote_status}'")
+        raise PermissionError("Webhook verification failed")
 
     def _create_payment_payload(
         self,

@@ -86,6 +86,11 @@ async def hosts_getter(
     if not hosts:
         return {"pages": 0, "current_page": 0, "host": None, "is_empty": True}
 
+    if current_page >= len(hosts):
+        # The stored page survives SwitchTo; the panel list may have shrunk meanwhile.
+        await widget.set_page(0)
+        current_page = 0
+
     return {
         "pages": len(hosts),
         "current_page": current_page + 1,
@@ -131,6 +136,11 @@ async def nodes_getter(
     if not nodes:
         return {"pages": 0, "current_page": 0, "node": None, "is_empty": True}
 
+    if current_page >= len(nodes):
+        # The stored page survives SwitchTo; the panel list may have shrunk meanwhile.
+        await widget.set_page(0)
+        current_page = 0
+
     return {
         "pages": len(nodes),
         "current_page": current_page + 1,
@@ -170,6 +180,11 @@ async def inbounds_getter(
 
     if not inbounds:
         return {"pages": 0, "current_page": 0, "inbound": None, "is_empty": True}
+
+    if current_page >= len(inbounds):
+        # The stored page survives SwitchTo; the panel list may have shrunk meanwhile.
+        await widget.set_page(0)
+        current_page = 0
 
     return {
         "pages": len(inbounds),

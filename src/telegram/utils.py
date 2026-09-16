@@ -17,6 +17,8 @@ def is_double_click(dialog_manager: DialogManager, key: str, cooldown: int = 10)
     if last_click_str:
         last_click = datetime.fromisoformat(last_click_str.replace("Z", "+00:00"))
         if now - last_click < timedelta(seconds=cooldown):
+            # Consume the confirmation: the next click must confirm again.
+            dialog_manager.dialog_data.pop(key, None)
             return True
 
     dialog_manager.dialog_data[key] = now.isoformat()

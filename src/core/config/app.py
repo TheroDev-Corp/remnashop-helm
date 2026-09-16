@@ -34,6 +34,10 @@ class AppConfig(BaseConfig, env_prefix="APP_"):
     api_key: Optional[SecretStr] = None
     assets_dir: Path = ASSETS_DIR
     origins: StringList = StringList("")
+    # CIDRs of reverse proxies allowed to set CF-Connecting-IP / X-Real-IP / X-Forwarded-For
+    # for payment webhook IP checks. Empty keeps the legacy behavior (headers trusted from any
+    # peer); when set, other peers are checked by their direct address.
+    trusted_proxies: StringList = StringList("")
     swagger_enabled: bool = False
     web_enabled: bool = Field(default=False, validation_alias="WEB_ENABLED")
     web_cabinet_url: str = Field(default="", validation_alias="WEB_CABINET_URL")

@@ -11,7 +11,7 @@ from httpx import AsyncClient, Timeout
 from loguru import logger
 from starlette.datastructures import Headers
 
-from src.application.dto import PaymentGatewayDto, PaymentResultDto
+from src.application.dto import PaymentGatewayDto, PaymentResultDto, TransactionDto
 from src.core.config import AppConfig
 from src.core.constants import T_ME
 from src.core.enums import TransactionStatus
@@ -45,6 +45,13 @@ class BasePaymentGateway(ABC):
         self,
         request: Request,
     ) -> Union[tuple[UUID, TransactionStatus], None]: ...
+
+    async def verify_paid_amount(self, request: Request, transaction: TransactionDto) -> bool:
+        """Check that a COMPLETED notification paid the transaction price.
+
+        Gateways whose invoices are created server-side with a fixed amount need no check.
+        """
+        return True
 
     async def build_webhook_response(self, request: Request) -> Response:
         return Response(status_code=200)

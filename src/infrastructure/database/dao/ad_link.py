@@ -64,6 +64,8 @@ class AdLinkDaoImpl(AdLinkDao):
             if hasattr(db_link, key):
                 setattr(db_link, key, value)
         await self.session.flush()
+        # Reload eagerly: the server-side ``onupdate`` expires ``updated_at`` after the UPDATE.
+        await self.session.refresh(db_link)
         logger.debug(f"AdLink id={link.id} updated")
         return self._to_dto(db_link)
 

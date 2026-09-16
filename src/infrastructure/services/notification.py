@@ -1,8 +1,10 @@
 import asyncio
 import base64
+import html
 import string
 import traceback
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any, Callable, Optional, Sequence, Union
 
 from aiogram import Bot
@@ -62,6 +64,7 @@ from src.application.events.user import (
 from src.core.config import AppConfig
 from src.core.enums import Locale, Role
 from src.core.types import AnyKeyboard, NotificationType
+from src.core.utils.time import datetime_now
 from src.infrastructure.services.event_bus import on_event
 from src.infrastructure.services.notification_queue import NotificationWorker
 from src.telegram.keyboards import (
@@ -74,6 +77,34 @@ from src.telegram.keyboards import (
     get_user_keyboard,
 )
 from src.telegram.widgets import extract_tg_emoji
+
+
+def build_error_report(
+    event: ErrorEvent,
+    log_context: str,
+    traceback_str: str,
+    now: Optional[datetime] = None,
+) -> tuple[str, str]:
+    """Return (filename, content) of the error report sent to admins.
+
+    Filename: `error_<YYYY-MM-DD_HH-MM-SS>_<8 hex of event_id>.txt` in the app timezone.
+    """
+    timestamp = event.occurred_at if now is None else now
+    if timestamp is None:
+        timestamp = datetime_now()
+    short_id = event.event_id.hex[:8]
+    filename = f"error_{timestamp.strftime('%Y-%m-%d_%H-%M-%S')}_{short_id}.txt"
+    exception = event.exception
+    content = (
+        f"Time: {timestamp.strftime('%Y-%m-%d %H:%M:%S %Z').strip()}\n"
+        f"Event ID: {event.event_id}\n"
+        f"Exception: {type(exception).__name__}: {exception}\n\n"
+        "=== LOG CONTEXT (last 100 lines) ===\n\n"
+        f"{log_context}\n\n"
+        "=== EXCEPTION ===\n\n"
+        f"{traceback_str}"
+    )
+    return filename, content
 
 
 class NotificationService(Notifier):
@@ -215,18 +246,12 @@ class NotificationService(Notifier):
 
         from src.core.logger import log_buffer  # noqa: PLC0415
 
-        log_context = log_buffer.get_context()
-        file_content = (
-            "=== LOG CONTEXT (last 100 lines) ===\n\n"
-            f"{log_context}\n\n"
-            "=== EXCEPTION ===\n\n"
-            f"{traceback_str}"
-        )
+        filename, file_content = build_error_report(event, log_buffer.get_context(), traceback_str)
 
         media = MediaDescriptorDto(
             kind="bytes",
             value=base64.b64encode(file_content.encode("utf-8")).decode(),
-            filename=f"error_{event.event_id}.txt",
+            filename=filename,
         )
 
         await self.notify_system(
@@ -359,7 +384,12 @@ class NotificationService(Notifier):
         render_kwargs = payload.i18n_kwargs.copy()
 
         if isinstance(user, UserDto) and payload.i18n_key == "raw-message":
-            user_data = asdict(user)
+            # Raw messages are sent as HTML: user-controlled fields substituted via $-templates
+            # (name, username, ...) must not inject markup or break entity parsing.
+            user_data = {
+                key: html.escape(value) if isinstance(value, str) else value
+                for key, value in asdict(user).items()
+            }
             render_kwargs = {**user_data, **payload.i18n_kwargs}
 
         reply_markup = self._prepare_reply_markup(
@@ -383,37 +413,7 @@ class NotificationService(Notifier):
         }
 
         try:
-            if payload.is_text:
-                message = await self.bot.send_message(
-                    chat_id=user.telegram_id,
-                    text=text,
-                    disable_web_page_preview=True,
-                    **kwargs,
-                )
-            elif payload.media:
-                method = self._get_media_method(payload)
-                media = self._build_media(payload.media)
-
-                if not method:
-                    logger.warning(f"Unknown media type for payload '{payload}'")
-                    return None
-
-                message = await method(user.telegram_id, media, caption=text, **kwargs)
-            else:
-                logger.error(f"Payload must contain text or media for user {user.log}")
-                return None
-
-            if message and payload.delete_after:
-                asyncio.create_task(
-                    self._schedule_message_deletion(
-                        chat_id=user.telegram_id,
-                        message_id=message.message_id,
-                        delay=payload.delete_after,
-                    )
-                )
-
-            return message
-
+            return await self._deliver_message(user, user.telegram_id, payload, text, kwargs)
         except TelegramForbiddenError:
             logger.warning(f"Bot was blocked by user {user.log}")
             return None
@@ -430,6 +430,45 @@ class NotificationService(Notifier):
         except Exception as e:
             logger.exception(f"Failed to send notification to {user.log}: {e}")
             raise
+
+    async def _deliver_message(
+        self,
+        user: Union[TempUserDto, UserDto],
+        chat_id: int,
+        payload: MessagePayloadDto,
+        text: str,
+        kwargs: dict[str, Any],
+    ) -> Optional[Message]:
+        if payload.is_text:
+            message = await self.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                disable_web_page_preview=True,
+                **kwargs,
+            )
+        elif payload.media:
+            method = self._get_media_method(payload)
+            media = self._build_media(payload.media)
+
+            if not method:
+                logger.warning(f"Unknown media type for payload '{payload}'")
+                return None
+
+            message = await method(chat_id, media, caption=text, **kwargs)
+        else:
+            logger.error(f"Payload must contain text or media for user {user.log}")
+            return None
+
+        if message and payload.delete_after:
+            asyncio.create_task(
+                self._schedule_message_deletion(
+                    chat_id=chat_id,
+                    message_id=message.message_id,
+                    delay=payload.delete_after,
+                )
+            )
+
+        return message
 
     def _get_media_method(self, payload: MessagePayloadDto) -> Optional[Callable[..., Any]]:
         if payload.is_photo:

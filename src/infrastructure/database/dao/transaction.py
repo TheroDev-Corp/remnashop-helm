@@ -7,7 +7,7 @@ from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import and_, case, func, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import TransactionDao
@@ -161,6 +161,116 @@ class TransactionDaoImpl(TransactionDao):
 
         logger.debug(f"Transaction '{payment_id}' existence status is '{is_exists}'")
         return is_exists
+
+    async def claim_fulfillment(
+        self,
+        payment_id: UUID,
+        max_attempts: int,
+        lease: timedelta,
+    ) -> Optional[int]:
+        now = datetime_now()
+        stmt = (
+            update(Transaction)
+            .where(
+                Transaction.payment_id == payment_id,
+                Transaction.status == TransactionStatus.COMPLETED,
+                Transaction.fulfilled_at.is_(None),
+                Transaction.fulfillment_attempts < max_attempts,
+                or_(
+                    Transaction.fulfillment_next_retry_at.is_(None),
+                    Transaction.fulfillment_next_retry_at <= now,
+                ),
+            )
+            .values(
+                fulfillment_attempts=Transaction.fulfillment_attempts + 1,
+                fulfillment_next_retry_at=now + lease,
+            )
+            .returning(Transaction.fulfillment_attempts)
+        )
+        attempt = await self.session.scalar(stmt)
+
+        if attempt is None:
+            logger.info(f"Fulfilment of transaction '{payment_id}' not claimed")
+            return None
+
+        logger.debug(f"Claimed fulfilment attempt '{attempt}' for transaction '{payment_id}'")
+        return cast(int, attempt)
+
+    async def mark_fulfilled(self, payment_id: UUID) -> bool:
+        stmt = (
+            update(Transaction)
+            .where(
+                Transaction.payment_id == payment_id,
+                Transaction.fulfilled_at.is_(None),
+            )
+            .values(
+                fulfilled_at=datetime_now(),
+                fulfillment_next_retry_at=None,
+                fulfillment_error=None,
+            )
+            .returning(Transaction.id)
+        )
+        marked = await self.session.scalar(stmt) is not None
+        logger.debug(f"Transaction '{payment_id}' marked fulfilled: '{marked}'")
+        return marked
+
+    async def mark_fulfillment_failed(
+        self,
+        payment_id: UUID,
+        retry_at: datetime,
+        error: str,
+    ) -> bool:
+        error = error[:1000]
+        unfulfilled = (
+            Transaction.payment_id == payment_id,
+            Transaction.fulfilled_at.is_(None),
+        )
+        first_stmt = (
+            update(Transaction)
+            .where(*unfulfilled, Transaction.fulfillment_error.is_(None))
+            .values(fulfillment_next_retry_at=retry_at, fulfillment_error=error)
+            .returning(Transaction.id)
+        )
+        if await self.session.scalar(first_stmt) is not None:
+            return True
+
+        await self.session.execute(
+            update(Transaction)
+            .where(*unfulfilled)
+            .values(fulfillment_next_retry_at=retry_at, fulfillment_error=error)
+        )
+        return False
+
+    async def get_unfulfilled_payment_ids(
+        self,
+        max_attempts: int,
+        grace: timedelta,
+        limit: int = 50,
+    ) -> list[UUID]:
+        now = datetime_now()
+        stmt = (
+            select(Transaction.payment_id)
+            .where(
+                Transaction.status == TransactionStatus.COMPLETED,
+                Transaction.fulfilled_at.is_(None),
+                Transaction.fulfillment_attempts < max_attempts,
+                or_(
+                    # Never attempted: give the webhook worker that just completed it a head start.
+                    and_(
+                        Transaction.fulfillment_next_retry_at.is_(None),
+                        Transaction.updated_at < now - grace,
+                    ),
+                    Transaction.fulfillment_next_retry_at <= now,
+                ),
+            )
+            .order_by(Transaction.created_at)
+            .limit(limit)
+        )
+        result = await self.session.scalars(stmt)
+        payment_ids = cast(list[UUID], result.all())
+
+        logger.debug(f"Found '{len(payment_ids)}' paid transactions awaiting fulfilment")
+        return payment_ids
 
     async def cancel_old(self, minutes: int = 30) -> int:
         threshold = datetime_now() - timedelta(minutes=minutes)

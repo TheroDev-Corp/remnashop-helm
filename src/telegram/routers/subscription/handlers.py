@@ -150,7 +150,28 @@ async def _resolve_renew_plan(
         await dialog_manager.switch_to(state=Subscription.DURATION)
         return True
 
-    logger.warning(f"{user.log} Tried to renew, but no matching plan found")
+    if len(plans) == 1:
+        logger.info(
+            f"{user.log} No matching plan for snapshot '{snapshot_id}', "
+            f"auto-selected single active plan '{plans[0].id}'"
+        )
+        dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(plans[0])
+        dialog_manager.dialog_data["only_single_plan"] = True
+        dialog_manager.dialog_data["plan_is_modified"] = True
+        await dialog_manager.switch_to(state=Subscription.DURATION)
+        return True
+
+    if len(plans) > 1:
+        logger.info(
+            f"{user.log} No matching plan for snapshot '{snapshot_id}', "
+            f"redirecting to plans catalog"
+        )
+        dialog_manager.dialog_data["only_single_plan"] = False
+        dialog_manager.dialog_data["plan_is_modified"] = False
+        await dialog_manager.switch_to(state=Subscription.PLANS)
+        return True
+
+    logger.warning(f"{user.log} Tried to renew, but no plans available")
     await notifier.notify_user(user, i18n_key="ntf-subscription.renew-plan-unavailable")
     return True
 
@@ -359,6 +380,11 @@ async def on_duration_select(
         return
     settings = await settings_dao.get()
     gateways = await payment_gateway_dao.get_active()
+    if not gateways:
+        # Reachable through the plan deeplink, which skips the gateway check of the menu.
+        logger.warning(f"{user.log} No active payment gateways for duration selection")
+        await notifier.notify_user(user, i18n_key="ntf-subscription.gateways-unavailable")
+        return
     currency = settings.default_currency
     price = pricing_service.calculate(
         user,

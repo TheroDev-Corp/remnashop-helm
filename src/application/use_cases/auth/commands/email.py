@@ -39,12 +39,19 @@ class ChangeEmail(Interactor[ChangeEmailDto, UserDto]):
         self.user_dao = user_dao
 
     async def _execute(self, actor: UserDto, data: ChangeEmailDto) -> UserDto:
+        # Same rule as RequestEmailVerification: a verified email cannot be swapped.
+        if actor.email and actor.is_email_verified and data.email != actor.email:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email change is available only for users without verified email",
+            )
+
         existing = await self.user_dao.get_by_email(data.email)
         if existing and existing.id != actor.id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
 
+        # `is_email_verified` describes the current `email`, not the pending one: keep it.
         actor.pending_email = data.email
-        actor.is_email_verified = False
         actor.email_verification_code_hash = None
         actor.email_verification_expires_at = None
 
@@ -111,7 +118,6 @@ class RequestEmailVerification(Interactor[RequestEmailVerificationDto, EmailVeri
                     status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
                 )
             actor.pending_email = requested_email
-            actor.is_email_verified = False
         elif requested_email and requested_email == actor.email and actor.is_email_verified:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="Email is already verified"

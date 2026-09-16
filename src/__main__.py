@@ -7,6 +7,7 @@ from src.core.config import AppConfig
 from src.core.logger import setup_logger
 from src.infrastructure.di import create_aiogram_container
 from src.telegram.dispatcher import get_bg_manager_factory, get_dispatcher, setup_dispatcher
+from src.telegram.middlewares import setup_error_middleware
 from src.web.app import get_app
 
 
@@ -22,6 +23,8 @@ def application() -> FastAPI:
     container = create_aiogram_container(config, bg_manager_factory)
 
     setup_aiogram_dishka(container, dispatcher, auto_inject=True)
+    # Must follow setup_aiogram_dishka (see setup_error_middleware docstring).
+    setup_error_middleware(dispatcher)
     setup_fastapi_dishka(container, app)
     return app
 

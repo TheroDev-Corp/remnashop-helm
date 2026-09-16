@@ -18,6 +18,7 @@ from src.application.use_cases.misc.queries.logs import GetLogs
 from src.application.use_cases.user.commands.roles import RevokeRole
 from src.core.constants import LOG_DIR, USER_KEY
 from src.core.enums import MediaType
+from src.core.exceptions import FileNotFoundError as LogFileNotFoundError
 from src.core.exceptions import LogsToFileDisabledError
 from src.core.logger import LOG_FILENAME
 from src.telegram.routers.dashboard.users.user.handlers import (
@@ -65,7 +66,7 @@ async def on_logs_request(
                 disable_default_markup=False,
             ),
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, LogFileNotFoundError):
         logger.error(f"{user.log} Log file not found at '{LOG_DIR}/{LOG_FILENAME}'")
         await notifier.notify_user(user, i18n_key="ntf-error.log-not-found")
     except LogsToFileDisabledError:

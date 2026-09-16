@@ -9,6 +9,13 @@ from loguru import logger
 
 from src.core.utils.converters import event_to_key
 
+# Project Fluent keys are lowercase identifiers (`space`, `unit-day`, `ntf-error.unknown`).
+_I18N_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
+
+
+def _looks_like_i18n_key(value: str) -> bool:
+    return bool(_I18N_KEY_RE.match(value))
+
 
 class TranslatorRunnerImpl(TranslatorRunner):
     def __init__(
@@ -33,7 +40,12 @@ class TranslatorRunnerImpl(TranslatorRunner):
         except KeyNotFoundError:
             if kwargs:
                 raise
-            logger.warning(f"Translation key '{key}' not found, falling back to the key itself")
+            if _looks_like_i18n_key(key):
+                logger.warning(f"Translation key '{key}' not found, falling back to the key itself")
+            else:
+                # Free text (plan names like 'Standart'/'XL', tags like 'IMPORTED') is passed
+                # through get() so it *may* be localized; rendering it as-is is expected.
+                logger.debug(f"Rendering '{key}' as raw text (no translation key)")
             text = key
         processed_text = self._postprocess(text)
 

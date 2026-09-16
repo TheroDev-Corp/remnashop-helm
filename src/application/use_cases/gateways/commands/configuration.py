@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import get_type_hints
 
 from adaptix import Retort
+from adaptix.load_error import LoadError
 from loguru import logger
 
 from src.application.common import Interactor
@@ -114,7 +115,11 @@ class UpdatePaymentGatewaySettings(Interactor[UpdatePaymentGatewaySettingsDto, N
                         f"Field '{data.field_name}' not found in {settings_type.__name__}"
                     )
 
-                new_value = self.retort.load(data.value, field_type)
+                try:
+                    new_value = self.retort.load(data.value, field_type)
+                except LoadError as e:
+                    # adaptix load errors are not ValueErrors: surface them as invalid input.
+                    raise ValueError(f"Cannot load '{data.value}' as {field_type}") from e
                 setattr(gateway.settings, data.field_name, new_value)
 
                 await self.gateway_dao.update(gateway)

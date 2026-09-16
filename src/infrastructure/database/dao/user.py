@@ -70,12 +70,21 @@ class UserDaoImpl(UserDao):
             select(User)
             .join(Subscription, User.current_subscription_id == Subscription.id)
             .where(Subscription.user_remna_id == remna_id)
+            .order_by(User.id)
+            .limit(2)
         )
-        db_user = await self.session.scalar(stmt)
+        db_users = list((await self.session.scalars(stmt)).all())
 
-        if db_user:
+        if len(db_users) > 1:
+            logger.warning(
+                f"RemnaUser '{remna_id}' is bound to current subscriptions of several users "
+                f"(e.g. user_ids {[u.id for u in db_users]}), refusing to pick one"
+            )
+            return None
+
+        if db_users:
             logger.debug(f"User with remna_id '{remna_id}' found in database")
-            return self._convert_to_dto(db_user)
+            return self._convert_to_dto(db_users[0])
 
         logger.debug(f"User with remna_id '{remna_id}' not found")
         return None
@@ -135,7 +144,10 @@ class UserDaoImpl(UserDao):
         return None
 
     async def get_all(self, limit: Optional[int] = None, offset: int = 0) -> list[UserDto]:
-        stmt = select(User).limit(limit).offset(offset) if limit else select(User).offset(offset)
+        # A deterministic order is required for LIMIT/OFFSET paging (sync walks all users).
+        stmt = select(User).order_by(User.id).offset(offset)
+        if limit:
+            stmt = stmt.limit(limit)
         result = await self.session.scalars(stmt)
         db_users = cast(list, result.all())
 
@@ -206,6 +218,17 @@ class UserDaoImpl(UserDao):
         logger.debug(
             f"Trial available status for user_id '{user_id}' set to '{is_trial_available}'"
         )
+
+    async def claim_trial(self, user_id: int) -> bool:
+        stmt = (
+            update(User)
+            .where(User.id == user_id, User.is_trial_available.is_(True))
+            .values(is_trial_available=False)
+            .returning(User.id)
+        )
+        claimed = await self.session.scalar(stmt) is not None
+        logger.debug(f"Trial claim for user_id '{user_id}': '{claimed}'")
+        return claimed
 
     async def set_bot_blocked_status(self, user_id: int, is_bot_blocked: bool) -> None:
         stmt = update(User).where(User.id == user_id).values(is_bot_blocked=is_bot_blocked)

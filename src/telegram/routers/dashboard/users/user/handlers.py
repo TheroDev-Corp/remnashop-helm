@@ -74,6 +74,7 @@ from src.core.constants import (
     USER_LIST_PAYLOAD,
 )
 from src.core.enums import Role
+from src.core.exceptions import RemnaUserBindingError, RemnawaveActionError
 from src.core.utils.validators import is_positive_int, parse_int
 from src.telegram.keyboards import get_contact_support_keyboard
 from src.telegram.states import DashboardUser, DashboardUsers
@@ -266,11 +267,23 @@ async def on_active_toggle(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
+    notifier: FromDishka[Notifier],
     toggle_subscription_status: FromDishka[ToggleSubscriptionStatus],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
-    await toggle_subscription_status(user, target_user_id)
+    try:
+        await toggle_subscription_status(user, target_user_id)
+    except RemnawaveActionError as e:
+        await notifier.notify_user(
+            user,
+            payload=MessagePayloadDto(
+                i18n_key="ntf-user.subscription-toggle-failed",
+                i18n_kwargs={"error": e.message or e.code or str(e.status_code)},
+            ),
+        )
+    except RemnaUserBindingError:
+        await notifier.notify_user(user, i18n_key="ntf-user.subscription-remna-not-found")
 
 
 @inject

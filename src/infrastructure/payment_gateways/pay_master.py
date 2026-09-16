@@ -73,18 +73,39 @@ class PayMasterGateway(BasePaymentGateway):
         if not payment_id_str:
             raise ValueError("Required field 'id' is missing")
 
-        status = webhook_data.get("status")
         payment_id = UUID(payment_id_str)
+        # The callback is unsigned and the paymentId is returned to the payer: take the status
+        # from the PayMaster API, never from the body.
+        status = await self._fetch_payment_status(payment_id_str)
 
         match status:
-            case "Settled" | "Authorized":
+            case "Settled":
                 transaction_status = TransactionStatus.COMPLETED
             case "Cancelled" | "Rejected":
                 transaction_status = TransactionStatus.CANCELED
+            case "Authorized" | "Pending":
+                # A hold is not a payment: wait for the final Settled callback.
+                logger.info(f"PayMaster payment '{payment_id}' is '{status}', waiting")
+                return None
             case _:
                 raise ValueError(f"Unsupported payment status: {status}")
 
         return payment_id, transaction_status
+
+    async def _fetch_payment_status(self, payment_id: str) -> str:
+        try:
+            response = await self._client.get(f"payments/{payment_id}")
+            response.raise_for_status()
+            data = orjson.loads(response.content)
+        except Exception as e:
+            logger.warning(f"Failed to confirm PayMaster payment '{payment_id}': {e}")
+            raise PermissionError("Webhook verification failed") from e
+
+        if not isinstance(data, dict) or str(data.get("id")) != payment_id:
+            logger.warning(f"PayMaster API returned a different payment for '{payment_id}'")
+            raise PermissionError("Webhook verification failed")
+
+        return str(data.get("status"))
 
     async def _create_payment_payload(self, amount: str, details: str) -> dict[str, Any]:
         return {
