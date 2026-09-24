@@ -5,7 +5,7 @@ import pytest
 
 from src.application.dto import UserDto as AppUserDto
 from src.application.services.remnawave import RemnaUserEvent, RemnaWebhookService
-from src.core.enums import Role, SubscriptionStatus
+from src.core.enums import Role, SubscriptionStatus, UserNotificationType
 from src.infrastructure.services.remnawave import RemnawaveImpl
 
 
@@ -260,3 +260,27 @@ async def test_delete_webhook_for_foreign_panel_user_does_nothing(
     mock_sub_dao.get_current.assert_not_awaited()
     mock_sub_dao.update_status.assert_not_awaited()
     mock_user_dao.clear_current_subscription.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("event", "expected_type"),
+    [
+        (RemnaUserEvent.EXPIRES_IN_72_HOURS, UserNotificationType.EXPIRES_IN_3_DAYS),
+        (RemnaUserEvent.EXPIRES_IN_48_HOURS, UserNotificationType.EXPIRES_IN_2_DAYS),
+        (RemnaUserEvent.EXPIRES_IN_24_HOURS, UserNotificationType.EXPIRES_IN_1_DAY),
+    ],
+)
+async def test_expiring_event_uses_per_day_notification_type(
+    webhook_service, mock_publisher, event, expected_type
+):
+    subscription = MagicMock()
+    subscription.expire_at = None
+    subscription.is_trial = False
+
+    await webhook_service._process_expiring(
+        _bot_user(1, 999999), subscription, event, _remna_user(12345, 999999)
+    )
+
+    published = mock_publisher.publish.await_args.args[0]
+    assert published.notification_type == expected_type

@@ -31,7 +31,7 @@ from src.application.use_cases.remnawave.commands.synchronization import (
 )
 from src.core.config import AppConfig
 from src.core.constants import DATETIME_VIEW_FORMAT, IMPORTED_TAG, T_ME, TIME_1H
-from src.core.enums import SubscriptionStatus
+from src.core.enums import SubscriptionStatus, UserNotificationType
 from src.core.types import RemnaUserDto
 from src.core.utils.converters import country_code_to_flag
 from src.core.utils.i18n_helpers import (
@@ -368,11 +368,19 @@ class RemnaWebhookService:
         if day is None:
             day = 1
 
+        # Each day has its own admin toggle; without an explicit type every warning
+        # was filed under EXPIRES_IN_1_DAY and the 3/2-day toggles did nothing.
+        notification_type = {
+            3: UserNotificationType.EXPIRES_IN_3_DAYS,
+            2: UserNotificationType.EXPIRES_IN_2_DAYS,
+        }.get(day, UserNotificationType.EXPIRES_IN_1_DAY)
+
         await self.event_bus.publish(
             SubscriptionExpiresEvent(
                 day=day,
                 user=user,
                 is_trial=current_subscription.is_trial,
+                notification_type=notification_type,
             )
         )
 
