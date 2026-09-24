@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Optional, cast
 from uuid import UUID
 
@@ -174,6 +174,25 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
 
         logger.debug(f"Active subscription not found for user_id '{user_id}'")
         return None
+
+    async def get_expiring_current(self, until: datetime) -> list[SubscriptionDto]:
+        stmt = (
+            select(Subscription)
+            .join(User, User.current_subscription_id == Subscription.id)
+            .where(
+                User.is_blocked.is_(False),
+                User.is_bot_blocked.is_(False),
+                User.telegram_id.is_not(None),
+                Subscription.status == SubscriptionStatus.ACTIVE,
+                Subscription.expire_at > datetime_now(),
+                Subscription.expire_at <= until,
+            )
+        )
+        result = await self.session.scalars(stmt)
+        db_subscriptions = cast(list, result.all())
+
+        logger.debug(f"Found '{len(db_subscriptions)}' current subscriptions expiring by '{until}'")
+        return self._convert_to_dto_list(db_subscriptions)
 
     async def update(self, subscription: SubscriptionDto) -> Optional[SubscriptionDto]:
         if not subscription.id:

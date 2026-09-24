@@ -9,6 +9,7 @@ from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import Button, Column, Row, Select, Start, SwitchTo
 
 from .getters import (
+    expiry_reminder_getter,
     system_default_route_getter,
     system_route_getter,
     system_type_getter,
@@ -19,6 +20,8 @@ from .handlers import (
     on_default_route_chat_id_input,
     on_default_route_clear,
     on_default_route_thread_id_input,
+    on_expiry_days_input,
+    on_expiry_fallback_toggle,
     on_route_chat_id_input,
     on_route_clear,
     on_route_thread_id_input,
@@ -75,6 +78,13 @@ user = Window(
     ),
     Row(
         SwitchTo(
+            text=I18nFormat("btn-notifications.expiry-reminder"),
+            id="expiry_reminder",
+            state=RemnashopNotifications.EXPIRY_REMINDER,
+        ),
+    ),
+    Row(
+        SwitchTo(
             text=I18nFormat("btn-back.general"),
             id="back",
             state=RemnashopNotifications.MAIN,
@@ -83,6 +93,51 @@ user = Window(
     IgnoreUpdate(),
     state=RemnashopNotifications.USER,
     getter=user_types_getter,
+)
+
+expiry_reminder = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-notifications-expiry-reminder"),
+    Row(
+        Button(
+            text=I18nFormat("btn-notifications.expiry-fallback-toggle"),
+            id="fallback_toggle",
+            on_click=on_expiry_fallback_toggle,
+        ),
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-notifications.expiry-days"),
+            id="days",
+            state=RemnashopNotifications.EXPIRY_REMINDER_DAYS,
+        ),
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=RemnashopNotifications.USER,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=RemnashopNotifications.EXPIRY_REMINDER,
+    getter=expiry_reminder_getter,
+)
+
+expiry_reminder_days = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-notifications-expiry-reminder-days"),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=RemnashopNotifications.EXPIRY_REMINDER,
+        ),
+    ),
+    MessageInput(func=on_expiry_days_input),
+    IgnoreUpdate(),
+    state=RemnashopNotifications.EXPIRY_REMINDER_DAYS,
+    getter=expiry_reminder_getter,
 )
 
 system = Window(
@@ -287,6 +342,8 @@ system_default_route_thread_id = Window(
 router = Dialog(
     notifications,
     user,
+    expiry_reminder,
+    expiry_reminder_days,
     system,
     system_type,
     system_route,

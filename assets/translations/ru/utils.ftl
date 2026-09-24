@@ -453,7 +453,7 @@ button-type = { $button_type ->
 
 notification-type = { $notification_type ->
     [SYSTEM] Система
-    [EXPIRES_IN_3_DAYS] Подписка истекает (3 дня)
+    [EXPIRES_IN_3_DAYS] Подписка истекает (3+ дня)
     [EXPIRES_IN_2_DAYS] Подписка истекает (2 дня)
     [EXPIRES_IN_1_DAY] Подписка истекает (1 день)
     [EXPIRED] Подписка истекла

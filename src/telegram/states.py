@@ -166,6 +166,8 @@ class RemnashopGateways(StatesGroup):
 class RemnashopNotifications(StatesGroup):
     MAIN = State()
     USER = State()
+    EXPIRY_REMINDER = State()
+    EXPIRY_REMINDER_DAYS = State()
     SYSTEM = State()
     SYSTEM_TYPE = State()
     SYSTEM_ROUTE = State()

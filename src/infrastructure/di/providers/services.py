@@ -17,6 +17,7 @@ from src.application.common import (
     XuiDbReader,
 )
 from src.application.services import (
+    ExpiryReminderService,
     PricingService,
     RemnaWebhookService,
 )
@@ -63,6 +64,7 @@ class ServicesProvider(Provider):
 
     remnawave = provide(source=RemnawaveImpl, provides=Remnawave)
     remna_webhook = provide(source=RemnaWebhookService, scope=Scope.REQUEST)
+    expiry_reminder = provide(source=ExpiryReminderService, scope=Scope.REQUEST)
 
     notification_queue = provide(source=NotificationQueue)
     notification_worker = provide(source=NotificationWorker)

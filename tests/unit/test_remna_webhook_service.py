@@ -5,7 +5,7 @@ import pytest
 
 from src.application.dto import UserDto as AppUserDto
 from src.application.services.remnawave import RemnaUserEvent, RemnaWebhookService
-from src.core.enums import Role, SubscriptionStatus, UserNotificationType
+from src.core.enums import Role, SubscriptionStatus
 from src.infrastructure.services.remnawave import RemnawaveImpl
 
 
@@ -77,6 +77,7 @@ def webhook_service(
         redis=mock_redis,
         bot_service=bot_service,
         remnawave=mock_remnawave,
+        expiry_reminder=MagicMock(remind=AsyncMock()),
         sync_user=sync_user,
     )
 
@@ -264,23 +265,20 @@ async def test_delete_webhook_for_foreign_panel_user_does_nothing(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("event", "expected_type"),
+    ("event", "expected_day"),
     [
-        (RemnaUserEvent.EXPIRES_IN_72_HOURS, UserNotificationType.EXPIRES_IN_3_DAYS),
-        (RemnaUserEvent.EXPIRES_IN_48_HOURS, UserNotificationType.EXPIRES_IN_2_DAYS),
-        (RemnaUserEvent.EXPIRES_IN_24_HOURS, UserNotificationType.EXPIRES_IN_1_DAY),
+        (RemnaUserEvent.EXPIRES_IN_72_HOURS, 3),
+        (RemnaUserEvent.EXPIRES_IN_48_HOURS, 2),
+        (RemnaUserEvent.EXPIRES_IN_24_HOURS, 1),
     ],
 )
-async def test_expiring_event_uses_per_day_notification_type(
-    webhook_service, mock_publisher, event, expected_type
-):
+async def test_expiring_webhook_goes_through_reminder_service(webhook_service, event, expected_day):
     subscription = MagicMock()
     subscription.expire_at = None
-    subscription.is_trial = False
+    user = _bot_user(1, 999999)
 
-    await webhook_service._process_expiring(
-        _bot_user(1, 999999), subscription, event, _remna_user(12345, 999999)
+    await webhook_service._process_expiring(user, subscription, event, _remna_user(12345, 999999))
+
+    webhook_service.expiry_reminder.remind.assert_awaited_once_with(
+        user, subscription, expected_day
     )
-
-    published = mock_publisher.publish.await_args.args[0]
-    assert published.notification_type == expected_type
