@@ -29,6 +29,21 @@ async def user_types_getter(
 
 
 @inject
+async def expiry_reminder_getter(
+    dialog_manager: DialogManager,
+    settings_dao: FromDishka[SettingsDao],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    settings = await settings_dao.get()
+    reminder = settings.notifications.expiry_reminder
+
+    return {
+        "fallback_enabled": reminder.fallback_enabled,
+        "days": ", ".join(str(day) for day in reminder.days),
+    }
+
+
+@inject
 async def system_types_getter(
     dialog_manager: DialogManager,
     settings_dao: FromDishka[SettingsDao],

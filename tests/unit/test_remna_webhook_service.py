@@ -77,6 +77,7 @@ def webhook_service(
         redis=mock_redis,
         bot_service=bot_service,
         remnawave=mock_remnawave,
+        expiry_reminder=MagicMock(remind=AsyncMock()),
         sync_user=sync_user,
     )
 
@@ -260,3 +261,24 @@ async def test_delete_webhook_for_foreign_panel_user_does_nothing(
     mock_sub_dao.get_current.assert_not_awaited()
     mock_sub_dao.update_status.assert_not_awaited()
     mock_user_dao.clear_current_subscription.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("event", "expected_day"),
+    [
+        (RemnaUserEvent.EXPIRES_IN_72_HOURS, 3),
+        (RemnaUserEvent.EXPIRES_IN_48_HOURS, 2),
+        (RemnaUserEvent.EXPIRES_IN_24_HOURS, 1),
+    ],
+)
+async def test_expiring_webhook_goes_through_reminder_service(webhook_service, event, expected_day):
+    subscription = MagicMock()
+    subscription.expire_at = None
+    user = _bot_user(1, 999999)
+
+    await webhook_service._process_expiring(user, subscription, event, _remna_user(12345, 999999))
+
+    webhook_service.expiry_reminder.remind.assert_awaited_once_with(
+        user, subscription, expected_day
+    )

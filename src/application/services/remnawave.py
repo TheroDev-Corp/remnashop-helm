@@ -15,7 +15,6 @@ from src.application.events import (
     NodeConnectionRestoredEvent,
     NodeTrafficReachedEvent,
     SubscriptionExpiredEvent,
-    SubscriptionExpiresEvent,
     SubscriptionLimitedEvent,
     TorrentBlockedEvent,
     UserDeviceAddedEvent,
@@ -43,6 +42,8 @@ from src.core.utils.i18n_helpers import (
 from src.core.utils.i18n_keys import ByteUnitKey
 from src.core.utils.time import datetime_now, get_traffic_reset_delta
 
+from .expiry_reminder import ExpiryReminderService
+
 
 class RemnaWebhookService:
     def __init__(
@@ -55,6 +56,7 @@ class RemnaWebhookService:
         redis: Redis,
         bot_service: BotService,
         remnawave: Remnawave,
+        expiry_reminder: ExpiryReminderService,
         #
         sync_user: SyncRemnaUser,
     ) -> None:
@@ -66,6 +68,7 @@ class RemnaWebhookService:
         self.redis = redis
         self.bot_service = bot_service
         self.remnawave = remnawave
+        self.expiry_reminder = expiry_reminder
         #
         self.sync_user = sync_user
 
@@ -368,13 +371,7 @@ class RemnaWebhookService:
         if day is None:
             day = 1
 
-        await self.event_bus.publish(
-            SubscriptionExpiresEvent(
-                day=day,
-                user=user,
-                is_trial=current_subscription.is_trial,
-            )
-        )
+        await self.expiry_reminder.remind(user, current_subscription, day)
 
     async def _process_not_connected(self, remna_user: RemnaUserDto) -> None:
         user = await self._get_user_by_remna_user(remna_user)

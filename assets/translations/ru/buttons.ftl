@@ -452,6 +452,12 @@ btn-notifications =
     .chat-id = 💬 Изменить чат
     .thread-id = 📁 Изменить тред
     .route-clear = ❌ Удалить маршрут
+    .expiry-reminder = ⏰ Напоминания о продлении
+    .expiry-days = 📅 Дни напоминаний
+    .expiry-fallback-toggle = { $fallback_enabled ->
+    [1] 🟢 Проверка по базе: включена
+    *[0] 🔴 Проверка по базе: выключена
+    }
     
     .user-choice = { $enabled ->
     [1] 🔘

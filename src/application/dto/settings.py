@@ -85,12 +85,21 @@ class SystemNotificationRouteDto:
 
 
 @dataclass(kw_only=True)
+class ExpiryReminderSettingsDto(TrackableMixin):
+    # Hourly DB scan that sends the reminders when panel webhooks are missing or broken.
+    fallback_enabled: bool = True
+    # Days before expiry to remind at, sorted descending.
+    days: list[int] = field(default_factory=lambda: [3, 2, 1])
+
+
+@dataclass(kw_only=True)
 class NotificationsSettingsDto(TrackableMixin):
     settings: dict[str, bool] = field(default_factory=get_default_notifications)
     routes: dict[str, SystemNotificationRouteDto] = field(
         default_factory=get_default_notifications_routes
     )
     default_route: SystemNotificationRouteDto = field(default_factory=SystemNotificationRouteDto)
+    expiry_reminder: ExpiryReminderSettingsDto = field(default_factory=ExpiryReminderSettingsDto)
 
     def is_enabled(self, ntf_type: NotificationType) -> bool:
         return self.settings.get(ntf_type, True)

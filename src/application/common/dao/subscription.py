@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -40,6 +41,10 @@ class SubscriptionDao(Protocol):
     async def get_all_by_user(self, user_id: int) -> list[SubscriptionDto]: ...
 
     async def get_current(self, user_id: int) -> Optional[SubscriptionDto]: ...
+
+    async def get_expiring_current(self, until: datetime) -> list[SubscriptionDto]:
+        """Active current subscriptions of reachable users that expire between now and `until`."""
+        ...
 
     async def update(self, subscription: SubscriptionDto) -> Optional[SubscriptionDto]:
         """Raises RemnaUserBindingError if `user_remna_id` changed to an id already used by

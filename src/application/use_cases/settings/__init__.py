@@ -18,8 +18,10 @@ from .commands.extra import (
     UpdateResetCooldown,
 )
 from .commands.notifications import (
+    ToggleExpiryReminderFallback,
     ToggleNotification,
     UpdateDefaultNotificationRoute,
+    UpdateExpiryReminderDays,
     UpdateSystemNotificationRoute,
 )
 from .commands.referral import (
@@ -54,6 +56,8 @@ SETTINGS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     UpdateDefaultCurrency,
     UpdateSystemNotificationRoute,
     UpdateDefaultNotificationRoute,
+    ToggleExpiryReminderFallback,
+    UpdateExpiryReminderDays,
     ToggleBackupEnabled,
     ToggleBackupSendToChat,
     UpdateBackupInterval,

@@ -9,9 +9,11 @@ from src.application.common import Notifier
 from src.application.common.dao import SettingsDao
 from src.application.dto import TelegramUserDto
 from src.application.use_cases.settings.commands.notifications import (
+    ToggleExpiryReminderFallback,
     ToggleNotification,
     UpdateDefaultNotificationRoute,
     UpdateDefaultNotificationRouteDto,
+    UpdateExpiryReminderDays,
     UpdateSystemNotificationRoute,
     UpdateSystemNotificationRouteDto,
 )
@@ -31,6 +33,38 @@ async def on_user_type_select(
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     await toggle_notification(user, selected_type)
+
+
+@inject
+async def on_expiry_fallback_toggle(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    toggle_expiry_reminder_fallback: FromDishka[ToggleExpiryReminderFallback],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    await toggle_expiry_reminder_fallback(user)
+
+
+@inject
+async def on_expiry_days_input(
+    message: Message,
+    widget: MessageInput,
+    dialog_manager: DialogManager,
+    notifier: FromDishka[Notifier],
+    update_expiry_reminder_days: FromDishka[UpdateExpiryReminderDays],
+) -> None:
+    dialog_manager.show_mode = ShowMode.EDIT
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+
+    try:
+        await update_expiry_reminder_days(user, message.text or "")
+    except ValueError:
+        await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
+        return
+
+    dialog_manager.show_mode = ShowMode.DELETE_AND_SEND
+    await dialog_manager.switch_to(RemnashopNotifications.EXPIRY_REMINDER)
 
 
 async def on_system_type_select(
