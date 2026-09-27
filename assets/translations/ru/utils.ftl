@@ -452,6 +452,7 @@ button-type = { $button_type ->
 }
 
 user-filter = { $filter ->
+    [ALL] 👥 Все
     [ACTIVE] 🟢 Активные
     [EXPIRING] ⏳ Истекают за 7 дней
     [EXPIRED] 🔴 Истекшие

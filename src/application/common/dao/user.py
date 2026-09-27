@@ -98,9 +98,22 @@ class UserDao(Protocol):
 
     async def get_with_trial_subscription(self) -> list[UserDto]: ...
 
-    async def get_by_filter(self, user_filter: UserFilter) -> list[UserDto]: ...
+    async def get_by_filter(
+        self,
+        user_filter: UserFilter,
+        *,
+        imported: bool = False,
+        not_in_bot: bool = False,
+    ) -> list[UserDto]:
+        """`imported`: came from the panel migration; `not_in_bot`: never used the bot."""
+        ...
 
-    async def count_by_filters(self) -> dict[UserFilter, int]: ...
+    async def count_by_filters(
+        self,
+        *,
+        imported: bool = False,
+        not_in_bot: bool = False,
+    ) -> dict[UserFilter, int]: ...
 
     async def count_new(self, days: int) -> int: ...
 

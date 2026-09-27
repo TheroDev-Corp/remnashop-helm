@@ -6,11 +6,24 @@ from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    or_,
+    select,
+    true,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.application.common.dao import UserDao
 from src.application.dto import UserDto
+from src.core.constants import IMPORTED_TAG
 from src.core.enums import Role, SubscriptionStatus, UserFilter
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Referral, Subscription, User
@@ -451,6 +464,7 @@ class UserDaoImpl(UserDao):
         status = Subscription.status
         is_active = and_(status == SubscriptionStatus.ACTIVE, Subscription.expire_at > now)
         return {
+            UserFilter.ALL: true(),
             UserFilter.ACTIVE: is_active,
             UserFilter.EXPIRING: and_(is_active, Subscription.expire_at <= now + timedelta(days=7)),
             UserFilter.EXPIRED: or_(
@@ -464,7 +478,29 @@ class UserDaoImpl(UserDao):
             UserFilter.BOT_BLOCKED: User.is_bot_blocked.is_(True),
         }
 
-    async def get_by_filter(self, user_filter: UserFilter) -> list[UserDto]:
+    @staticmethod
+    def _scope_conditions(imported: bool, not_in_bot: bool) -> list[ColumnElement[bool]]:
+        conditions: list[ColumnElement[bool]] = []
+        if imported:
+            # Any of the user's subscriptions came from the panel: stays true after a purchase.
+            imported_subscription = aliased(Subscription)
+            conditions.append(
+                exists().where(
+                    imported_subscription.user_id == User.id,
+                    imported_subscription.plan_snapshot["name"].as_string() == IMPORTED_TAG,
+                )
+            )
+        if not_in_bot:
+            conditions.append(User.bot_started_at.is_(None))
+        return conditions
+
+    async def get_by_filter(
+        self,
+        user_filter: UserFilter,
+        *,
+        imported: bool = False,
+        not_in_bot: bool = False,
+    ) -> list[UserDto]:
         # Loads the whole segment for an in-memory scrolling list: fine for tens of thousands
         # of users; beyond that switch the dialog to LIMIT/OFFSET paging.
         if user_filter == UserFilter.EXPIRING:
@@ -477,7 +513,10 @@ class UserDaoImpl(UserDao):
         stmt = (
             select(User)
             .outerjoin(Subscription, User.current_subscription_id == Subscription.id)
-            .where(self._filter_conditions()[user_filter])
+            .where(
+                self._filter_conditions()[user_filter],
+                *self._scope_conditions(imported, not_in_bot),
+            )
             .order_by(order)
         )
         result = await self.session.scalars(stmt)
@@ -486,12 +525,18 @@ class UserDaoImpl(UserDao):
         logger.debug(f"Retrieved '{len(db_users)}' users for filter '{user_filter}'")
         return self._convert_to_dto_list(db_users)
 
-    async def count_by_filters(self) -> dict[UserFilter, int]:
+    async def count_by_filters(
+        self,
+        *,
+        imported: bool = False,
+        not_in_bot: bool = False,
+    ) -> dict[UserFilter, int]:
         conditions = self._filter_conditions()
         stmt = (
             select(*(func.count(case((cond, 1))).label(f.value) for f, cond in conditions.items()))
             .select_from(User)
             .outerjoin(Subscription, User.current_subscription_id == Subscription.id)
+            .where(*self._scope_conditions(imported, not_in_bot))
         )
         row = (await self.session.execute(stmt)).one()
         return {f: int(row._mapping[f.value] or 0) for f in conditions}

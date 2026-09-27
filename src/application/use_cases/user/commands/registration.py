@@ -12,6 +12,7 @@ from src.application.use_cases.referral.commands.attachment import AttachReferra
 from src.core.config import AppConfig
 from src.core.enums import Locale, Role
 from src.core.utils.converters import user_name_clean
+from src.core.utils.time import datetime_now
 
 
 @dataclass
@@ -198,6 +199,8 @@ class UpdateUserProfileDto:
     full_name: str
     language_code: Optional[str]
     telegram_id: int
+    # False for channel membership updates: joining the channel is not using the bot.
+    is_bot_interaction: bool = True
 
 
 class UpdateUserProfile(Interactor[UpdateUserProfileDto, UserDto]):
@@ -243,6 +246,11 @@ class UpdateUserProfile(Interactor[UpdateUserProfileDto, UserDto]):
                     f"User '{user.remna_name}' language '{new_language}' is not supported, "
                     f"keeping current '{user.language}'"
                 )
+
+        if data.is_bot_interaction and user.bot_started_at is None:
+            logger.debug(f"User '{user.remna_name}' started the bot")
+            user.bot_started_at = datetime_now()
+            changed = True
 
         if not changed:
             return user

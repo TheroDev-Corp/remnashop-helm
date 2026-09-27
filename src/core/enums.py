@@ -66,6 +66,7 @@ class BroadcastAudience(UpperStrEnum):
 
 
 class UserFilter(UpperStrEnum):
+    ALL = auto()
     ACTIVE = auto()
     EXPIRING = auto()  # active, ends within a week
     EXPIRED = auto()

@@ -1,4 +1,5 @@
 from io import BytesIO
+from typing import Any
 
 from adaptix import Retort
 from aiogram.types import CallbackQuery, Message
@@ -86,7 +87,9 @@ async def on_user_select(
     context = dialog_manager.current_context()
     origin = context.state
     start_data = context.start_data or {}
-    payload = start_data.get("found_users") or start_data.get("user_filter")  # type: ignore[union-attr]
+    payload = start_data.get("found_users")  # type: ignore[union-attr]
+    if origin == DashboardUsers.FILTER_RESULTS:
+        payload = get_filter_query(dialog_manager)
 
     await start_user_window(
         manager=dialog_manager,
@@ -96,16 +99,35 @@ async def on_user_select(
     )
 
 
+def get_filter_query(dialog_manager: DialogManager) -> dict[str, Any]:
+    # Lives in dialog_data; after a round trip through the user card the list is restarted
+    # with it in start_data instead.
+    start_data = dialog_manager.start_data or {}
+    query = dialog_manager.dialog_data.get("user_filter") or start_data.get("user_filter")  # type: ignore[union-attr]
+    return dict(query or {"filter": UserFilter.ALL.value, "imported": False, "not_in_bot": False})
+
+
 async def on_filter_select(
     callback: CallbackQuery,
     widget: Select,
     dialog_manager: DialogManager,
     selected_filter: UserFilter,
 ) -> None:
-    await dialog_manager.start(
-        state=DashboardUsers.FILTER_RESULTS,
-        data={"user_filter": selected_filter.value},
-    )
+    query = get_filter_query(dialog_manager)
+    query["filter"] = selected_filter.value
+    dialog_manager.dialog_data["user_filter"] = query
+    await dialog_manager.switch_to(DashboardUsers.FILTER_RESULTS)
+
+
+async def on_filter_scope_toggle(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+) -> None:
+    query = get_filter_query(dialog_manager)
+    key = widget.widget_id  # "imported" / "not_in_bot"
+    query[key] = not query.get(key, False)
+    dialog_manager.dialog_data["user_filter"] = query
 
 
 @inject

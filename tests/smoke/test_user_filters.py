@@ -67,3 +67,70 @@ async def test_filters_segment_users(app):
         assert owner.has(f"user:{seed.subscriber_id}")
     finally:
         await _set_subscriber_expire(app, "30 days")
+
+
+async def _filter_ids_scoped(app, user_filter, **scope) -> set[int]:
+    from dishka import Scope
+
+    from src.application.common.dao import UserDao
+
+    async with app.container(scope=Scope.REQUEST) as request:
+        dao = await request.get(UserDao)
+        users = await dao.get_by_filter(user_filter, **scope)
+        counts = await dao.count_by_filters(**scope)
+    assert counts[user_filter] == len(users)
+    return {u.id for u in users}
+
+
+async def test_panel_imports_not_in_bot_are_filterable_and_manageable(app):
+    from dishka import Scope
+
+    from src.application.common.dao import UserDao
+    from src.core.enums import UserFilter
+    from tests.smoke.harness.client import TgUser
+    from tests.smoke.test_admin_flows import _run_steps
+
+    imported_tg = 555_000_777
+    app.panel.add_user(username="panel_with_tg", telegram_id=imported_tg)
+    without_tg = app.panel.add_user(username="panel_no_tg", email="no-tg@example.com")
+
+    owner = await _owner_dashboard(app)
+    await _run_steps(app, owner, ["importer", "sync_panel", "sync_panel_start"])
+    await app.settle()
+
+    async with app.container(scope=Scope.REQUEST) as request:
+        dao = await request.get(UserDao)
+        user_with_tg = await dao.get_by_telegram_id(imported_tg)
+        user_without_tg = await dao.get_by_remna_id(without_tg["id"])
+    assert user_with_tg and user_without_tg
+    new_ids = {user_with_tg.id, user_without_tg.id}
+
+    scope = {"imported": True, "not_in_bot": True}
+    assert new_ids <= await _filter_ids_scoped(app, UserFilter.ALL, **scope)
+    assert new_ids <= await _filter_ids_scoped(app, UserFilter.ACTIVE, **scope)
+    assert app.seed.subscriber_id not in await _filter_ids_scoped(
+        app, UserFilter.ALL, imported=True
+    )
+    assert app.seed.owner_id not in await _filter_ids_scoped(app, UserFilter.ALL, not_in_bot=True)
+
+    # Admin reaches a telegram-less panel user through the filters and extends it on the panel.
+    expire_before = app.panel.users[without_tg["id"]]["expireAt"]
+    owner = await _owner_dashboard(app)
+    await owner.click("users")
+    await owner.click("filters")
+    await owner.click("imported")
+    await owner.click("not_in_bot")
+    await owner.click("filter:ALL")
+    assert "из панели" in owner.screen_text() and "не в боте" in owner.screen_text()
+    await owner.click(f"user:{user_without_tg.id}")
+    await _run_steps(app, owner, ["subscription", "expire_time", "send:10"])
+    assert app.panel.users[without_tg["id"]]["expireAt"] != expire_before
+
+    # Back from the card keeps both scope toggles.
+    await _run_steps(app, owner, ["back", "back", "back", "expect:DashboardUsers:FILTER_RESULTS"])
+    assert owner.has(f"user:{user_with_tg.id}")
+
+    # First message to the bot: still imported, no longer "not in bot".
+    await TgUser(app, imported_tg, "Imported", "imported").send("/start")
+    assert user_with_tg.id in await _filter_ids_scoped(app, UserFilter.ALL, imported=True)
+    assert user_with_tg.id not in await _filter_ids_scoped(app, UserFilter.ALL, **scope)

@@ -12,6 +12,8 @@ from src.core.constants import RECENT_REGISTERED_MAX_COUNT
 from src.core.enums import UserFilter
 from src.core.utils.converters import percent
 
+from .handlers import get_filter_query
+
 
 @inject
 async def search_results_getter(
@@ -55,8 +57,15 @@ async def filters_getter(
     user_dao: FromDishka[UserDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    counts = await user_dao.count_by_filters()
-    return {"filters": [{"filter": f, "count": count} for f, count in counts.items()]}
+    query = get_filter_query(dialog_manager)
+    counts = await user_dao.count_by_filters(
+        imported=query["imported"], not_in_bot=query["not_in_bot"]
+    )
+    return {
+        "filters": [{"filter": f, "count": count} for f, count in counts.items()],
+        "imported": query["imported"],
+        "not_in_bot": query["not_in_bot"],
+    }
 
 
 @inject
@@ -65,9 +74,18 @@ async def filter_results_getter(
     user_dao: FromDishka[UserDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    user_filter = UserFilter(dialog_manager.start_data["user_filter"])  # type: ignore[index, call-overload]
-    users = await user_dao.get_by_filter(user_filter)
-    return {"filter": user_filter, "users": users, "count": len(users)}
+    query = get_filter_query(dialog_manager)
+    user_filter = UserFilter(query["filter"])
+    users = await user_dao.get_by_filter(
+        user_filter, imported=query["imported"], not_in_bot=query["not_in_bot"]
+    )
+    return {
+        "filter": user_filter,
+        "users": users,
+        "count": len(users),
+        "imported": query["imported"],
+        "not_in_bot": query["not_in_bot"],
+    }
 
 
 @inject

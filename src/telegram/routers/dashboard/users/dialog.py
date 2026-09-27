@@ -32,6 +32,7 @@ from .handlers import (
     on_blacklist_view,
     on_block_input,
     on_clear_blocked_ids,
+    on_filter_scope_toggle,
     on_filter_select,
     on_source_add_input,
     on_source_delete,
@@ -197,6 +198,18 @@ search_results = Window(
 filters = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-users-filters"),
+    Row(
+        Button(
+            text=I18nFormat("btn-users.filter-imported", enabled=F["imported"]),
+            id="imported",
+            on_click=on_filter_scope_toggle,
+        ),
+        Button(
+            text=I18nFormat("btn-users.filter-not-in-bot", enabled=F["not_in_bot"]),
+            id="not_in_bot",
+            on_click=on_filter_scope_toggle,
+        ),
+    ),
     Column(
         Select(
             text=I18nFormat(
@@ -225,7 +238,13 @@ filters = Window(
 
 filter_results = Window(
     Banner(BannerName.DASHBOARD),
-    I18nFormat("msg-users-filter-results", filter=F["filter"], count=F["count"]),
+    I18nFormat(
+        "msg-users-filter-results",
+        filter=F["filter"],
+        count=F["count"],
+        imported=F["imported"],
+        not_in_bot=F["not_in_bot"],
+    ),
     ScrollingGroup(
         Select(
             text=Format("{item.name} ({item.contact_label})"),
