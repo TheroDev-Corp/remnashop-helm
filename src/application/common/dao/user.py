@@ -2,7 +2,7 @@ from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
 from src.application.dto import UserDto
-from src.core.enums import Role, UserFilter
+from src.core.enums import Role, UserFilter, UserSource
 
 
 @runtime_checkable
@@ -102,16 +102,16 @@ class UserDao(Protocol):
         self,
         user_filter: UserFilter,
         *,
-        imported: bool = False,
+        source: UserSource = UserSource.ANY,
         not_in_bot: bool = False,
     ) -> list[UserDto]:
-        """`imported`: came from the panel migration; `not_in_bot`: never used the bot."""
+        """`source`: panel migration or self-registered; `not_in_bot`: never used the bot."""
         ...
 
     async def count_by_filters(
         self,
         *,
-        imported: bool = False,
+        source: UserSource = UserSource.ANY,
         not_in_bot: bool = False,
     ) -> dict[UserFilter, int]: ...
 

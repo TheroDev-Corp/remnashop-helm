@@ -77,6 +77,12 @@ class UserFilter(UpperStrEnum):
     BOT_BLOCKED = auto()
 
 
+class UserSource(UpperStrEnum):
+    ANY = auto()
+    PANEL = auto()  # came from the Remnawave / 3X-UI migration
+    SELF = auto()  # registered on their own (bot or web)
+
+
 class PlanType(UpperStrEnum):
     TRAFFIC = auto()
     DEVICES = auto()

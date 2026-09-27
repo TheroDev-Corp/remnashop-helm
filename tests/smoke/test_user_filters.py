@@ -86,7 +86,7 @@ async def test_panel_imports_not_in_bot_are_filterable_and_manageable(app):
     from dishka import Scope
 
     from src.application.common.dao import UserDao
-    from src.core.enums import UserFilter
+    from src.core.enums import UserFilter, UserSource
     from tests.smoke.harness.client import TgUser
     from tests.smoke.test_admin_flows import _run_steps
 
@@ -105,12 +105,15 @@ async def test_panel_imports_not_in_bot_are_filterable_and_manageable(app):
     assert user_with_tg and user_without_tg
     new_ids = {user_with_tg.id, user_without_tg.id}
 
-    scope = {"imported": True, "not_in_bot": True}
+    scope = {"source": UserSource.PANEL, "not_in_bot": True}
     assert new_ids <= await _filter_ids_scoped(app, UserFilter.ALL, **scope)
     assert new_ids <= await _filter_ids_scoped(app, UserFilter.ACTIVE, **scope)
     assert app.seed.subscriber_id not in await _filter_ids_scoped(
-        app, UserFilter.ALL, imported=True
+        app, UserFilter.ALL, source=UserSource.PANEL
     )
+    self_registered = await _filter_ids_scoped(app, UserFilter.ALL, source=UserSource.SELF)
+    assert app.seed.subscriber_id in self_registered
+    assert not new_ids & self_registered
     assert app.seed.owner_id not in await _filter_ids_scoped(app, UserFilter.ALL, not_in_bot=True)
 
     # Admin reaches a telegram-less panel user through the filters and extends it on the panel.
@@ -118,7 +121,7 @@ async def test_panel_imports_not_in_bot_are_filterable_and_manageable(app):
     owner = await _owner_dashboard(app)
     await owner.click("users")
     await owner.click("filters")
-    await owner.click("imported")
+    await owner.click("source")  # ANY -> PANEL
     await owner.click("not_in_bot")
     await owner.click("filter:ALL")
     assert "из панели" in owner.screen_text() and "не в боте" in owner.screen_text()
@@ -132,5 +135,5 @@ async def test_panel_imports_not_in_bot_are_filterable_and_manageable(app):
 
     # First message to the bot: still imported, no longer "not in bot".
     await TgUser(app, imported_tg, "Imported", "imported").send("/start")
-    assert user_with_tg.id in await _filter_ids_scoped(app, UserFilter.ALL, imported=True)
+    assert user_with_tg.id in await _filter_ids_scoped(app, UserFilter.ALL, source=UserSource.PANEL)
     assert user_with_tg.id not in await _filter_ids_scoped(app, UserFilter.ALL, **scope)

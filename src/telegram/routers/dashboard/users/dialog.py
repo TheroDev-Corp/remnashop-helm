@@ -32,8 +32,9 @@ from .handlers import (
     on_blacklist_view,
     on_block_input,
     on_clear_blocked_ids,
-    on_filter_scope_toggle,
+    on_filter_not_in_bot_toggle,
     on_filter_select,
+    on_filter_source_cycle,
     on_source_add_input,
     on_source_delete,
     on_source_sync,
@@ -200,14 +201,14 @@ filters = Window(
     I18nFormat("msg-users-filters"),
     Row(
         Button(
-            text=I18nFormat("btn-users.filter-imported", enabled=F["imported"]),
-            id="imported",
-            on_click=on_filter_scope_toggle,
+            text=I18nFormat("btn-users.filter-source", source=F["source"]),
+            id="source",
+            on_click=on_filter_source_cycle,
         ),
         Button(
             text=I18nFormat("btn-users.filter-not-in-bot", enabled=F["not_in_bot"]),
             id="not_in_bot",
-            on_click=on_filter_scope_toggle,
+            on_click=on_filter_not_in_bot_toggle,
         ),
     ),
     Column(
@@ -242,7 +243,7 @@ filter_results = Window(
         "msg-users-filter-results",
         filter=F["filter"],
         count=F["count"],
-        imported=F["imported"],
+        source=F["source"],
         not_in_bot=F["not_in_bot"],
     ),
     ScrollingGroup(

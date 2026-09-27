@@ -136,10 +136,11 @@ btn-users =
     .recent-activity = 📝 Последние взаимодействующие
     .filters = 🔎 Фильтры
     .filter-choice = { user-filter } ({ $count })
-    .filter-imported = { $enabled ->
-        [1] ✅
-        *[0] ⬜
-    } Из панели
+    .filter-source = { $source ->
+        [PANEL] 📥 Из панели
+        [SELF] 🙋 Пришли сами
+        *[ANY] 👥 Источник: все
+    }
     .filter-not-in-bot = { $enabled ->
         [1] ✅
         *[0] ⬜

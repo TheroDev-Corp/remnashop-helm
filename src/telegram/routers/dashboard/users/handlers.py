@@ -28,7 +28,7 @@ from src.application.use_cases.user.commands.blocking import (
 )
 from src.application.use_cases.user.queries.search import SearchUsers, SearchUsersDto
 from src.core.constants import USER_KEY
-from src.core.enums import UserFilter
+from src.core.enums import UserFilter, UserSource
 from src.core.utils.validators import is_valid_url
 from src.telegram.states import DashboardUsers
 from src.telegram.utils import is_double_click
@@ -104,7 +104,10 @@ def get_filter_query(dialog_manager: DialogManager) -> dict[str, Any]:
     # with it in start_data instead.
     start_data = dialog_manager.start_data or {}
     query = dialog_manager.dialog_data.get("user_filter") or start_data.get("user_filter")  # type: ignore[union-attr]
-    return dict(query or {"filter": UserFilter.ALL.value, "imported": False, "not_in_bot": False})
+    return dict(
+        query
+        or {"filter": UserFilter.ALL.value, "source": UserSource.ANY.value, "not_in_bot": False}
+    )
 
 
 async def on_filter_select(
@@ -119,14 +122,25 @@ async def on_filter_select(
     await dialog_manager.switch_to(DashboardUsers.FILTER_RESULTS)
 
 
-async def on_filter_scope_toggle(
+async def on_filter_source_cycle(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
 ) -> None:
     query = get_filter_query(dialog_manager)
-    key = widget.widget_id  # "imported" / "not_in_bot"
-    query[key] = not query.get(key, False)
+    sources = list(UserSource)
+    next_source = sources[(sources.index(UserSource(query["source"])) + 1) % len(sources)]
+    query["source"] = next_source.value
+    dialog_manager.dialog_data["user_filter"] = query
+
+
+async def on_filter_not_in_bot_toggle(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+) -> None:
+    query = get_filter_query(dialog_manager)
+    query["not_in_bot"] = not query["not_in_bot"]
     dialog_manager.dialog_data["user_filter"] = query
 
 

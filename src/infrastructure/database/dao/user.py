@@ -24,7 +24,7 @@ from sqlalchemy.orm import aliased
 from src.application.common.dao import UserDao
 from src.application.dto import UserDto
 from src.core.constants import IMPORTED_TAG
-from src.core.enums import Role, SubscriptionStatus, UserFilter
+from src.core.enums import Role, SubscriptionStatus, UserFilter, UserSource
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Referral, Subscription, User
 
@@ -479,17 +479,16 @@ class UserDaoImpl(UserDao):
         }
 
     @staticmethod
-    def _scope_conditions(imported: bool, not_in_bot: bool) -> list[ColumnElement[bool]]:
+    def _scope_conditions(source: UserSource, not_in_bot: bool) -> list[ColumnElement[bool]]:
         conditions: list[ColumnElement[bool]] = []
-        if imported:
+        if source != UserSource.ANY:
             # Any of the user's subscriptions came from the panel: stays true after a purchase.
             imported_subscription = aliased(Subscription)
-            conditions.append(
-                exists().where(
-                    imported_subscription.user_id == User.id,
-                    imported_subscription.plan_snapshot["name"].as_string() == IMPORTED_TAG,
-                )
+            from_panel = exists().where(
+                imported_subscription.user_id == User.id,
+                imported_subscription.plan_snapshot["name"].as_string() == IMPORTED_TAG,
             )
+            conditions.append(from_panel if source == UserSource.PANEL else ~from_panel)
         if not_in_bot:
             conditions.append(User.bot_started_at.is_(None))
         return conditions
@@ -498,7 +497,7 @@ class UserDaoImpl(UserDao):
         self,
         user_filter: UserFilter,
         *,
-        imported: bool = False,
+        source: UserSource = UserSource.ANY,
         not_in_bot: bool = False,
     ) -> list[UserDto]:
         # Loads the whole segment for an in-memory scrolling list: fine for tens of thousands
@@ -515,7 +514,7 @@ class UserDaoImpl(UserDao):
             .outerjoin(Subscription, User.current_subscription_id == Subscription.id)
             .where(
                 self._filter_conditions()[user_filter],
-                *self._scope_conditions(imported, not_in_bot),
+                *self._scope_conditions(source, not_in_bot),
             )
             .order_by(order)
         )
@@ -528,7 +527,7 @@ class UserDaoImpl(UserDao):
     async def count_by_filters(
         self,
         *,
-        imported: bool = False,
+        source: UserSource = UserSource.ANY,
         not_in_bot: bool = False,
     ) -> dict[UserFilter, int]:
         conditions = self._filter_conditions()
@@ -536,7 +535,7 @@ class UserDaoImpl(UserDao):
             select(*(func.count(case((cond, 1))).label(f.value) for f, cond in conditions.items()))
             .select_from(User)
             .outerjoin(Subscription, User.current_subscription_id == Subscription.id)
-            .where(*self._scope_conditions(imported, not_in_bot))
+            .where(*self._scope_conditions(source, not_in_bot))
         )
         row = (await self.session.execute(stmt)).one()
         return {f: int(row._mapping[f.value] or 0) for f in conditions}
