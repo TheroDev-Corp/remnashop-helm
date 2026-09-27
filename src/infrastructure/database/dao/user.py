@@ -6,12 +6,13 @@ from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import UserDao
 from src.application.dto import UserDto
-from src.core.enums import Role, SubscriptionStatus
+from src.core.enums import Role, SubscriptionStatus, UserFilter
+from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Referral, Subscription, User
 
 
@@ -441,6 +442,59 @@ class UserDaoImpl(UserDao):
         )
         result = await self.session.execute(stmt)
         return self._convert_to_dto_list(list(result.scalars()))
+
+    @staticmethod
+    def _filter_conditions() -> dict[UserFilter, ColumnElement[bool]]:
+        # Over users LEFT JOIN their current subscription. A past expire_at counts as expired
+        # even while the status is still ACTIVE (the panel's `user.expired` webhook may be lost).
+        now = datetime_now()
+        status = Subscription.status
+        is_active = and_(status == SubscriptionStatus.ACTIVE, Subscription.expire_at > now)
+        return {
+            UserFilter.ACTIVE: is_active,
+            UserFilter.EXPIRING: and_(is_active, Subscription.expire_at <= now + timedelta(days=7)),
+            UserFilter.EXPIRED: or_(
+                status == SubscriptionStatus.EXPIRED,
+                and_(status == SubscriptionStatus.ACTIVE, Subscription.expire_at <= now),
+            ),
+            UserFilter.LIMITED: status == SubscriptionStatus.LIMITED,
+            UserFilter.DISABLED: status == SubscriptionStatus.DISABLED,
+            UserFilter.TRIAL: and_(is_active, Subscription.is_trial.is_(True)),
+            UserFilter.NO_SUBSCRIPTION: User.current_subscription_id.is_(None),
+            UserFilter.BOT_BLOCKED: User.is_bot_blocked.is_(True),
+        }
+
+    async def get_by_filter(self, user_filter: UserFilter) -> list[UserDto]:
+        # Loads the whole segment for an in-memory scrolling list: fine for tens of thousands
+        # of users; beyond that switch the dialog to LIMIT/OFFSET paging.
+        if user_filter == UserFilter.EXPIRING:
+            order = Subscription.expire_at.asc()
+        elif user_filter == UserFilter.EXPIRED:
+            order = Subscription.expire_at.desc()
+        else:
+            order = User.created_at.desc()
+
+        stmt = (
+            select(User)
+            .outerjoin(Subscription, User.current_subscription_id == Subscription.id)
+            .where(self._filter_conditions()[user_filter])
+            .order_by(order)
+        )
+        result = await self.session.scalars(stmt)
+        db_users = cast(list, result.all())
+
+        logger.debug(f"Retrieved '{len(db_users)}' users for filter '{user_filter}'")
+        return self._convert_to_dto_list(db_users)
+
+    async def count_by_filters(self) -> dict[UserFilter, int]:
+        conditions = self._filter_conditions()
+        stmt = (
+            select(*(func.count(case((cond, 1))).label(f.value) for f, cond in conditions.items()))
+            .select_from(User)
+            .outerjoin(Subscription, User.current_subscription_id == Subscription.id)
+        )
+        row = (await self.session.execute(stmt)).one()
+        return {f: int(row._mapping[f.value] or 0) for f in conditions}
 
     async def get_with_trial_subscription(self) -> list[UserDto]:
         stmt = (

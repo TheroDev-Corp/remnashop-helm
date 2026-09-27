@@ -436,6 +436,20 @@ msg-broadcast-view =
 # Users
 msg-users-recent-registered = <b>🆕 Последние зарегистрированные</b>
 msg-users-recent-activity = <b>📝 Последние взаимодействующие</b>
+
+msg-users-filters =
+    <b>🔎 Фильтры пользователей</b>
+
+    Статус берется из текущей подписки пользователя. Подписка с прошедшей датой окончания считается истекшей, даже если панель не прислала об этом вебхук.
+
+msg-users-filter-results =
+    <b>{ user-filter }</b>
+
+    Найдено <b>{ $count }</b> { $count ->
+    [one] пользователь
+    [few] пользователя
+    *[more] пользователей
+    }
 msg-user-transactions = <b>🧾 Транзакции пользователя</b>
 msg-user-devices = <b>📱 Устройства пользователя ({ $current_count } / { $max_count })</b>
 msg-user-give-access = <b>🔑 Предоставить доступ к плану</b>

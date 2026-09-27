@@ -81,6 +81,8 @@ class DashboardUsers(StatesGroup):
     SEARCH_RESULTS = State()
     RECENT_REGISTERED = State()
     RECENT_ACTIVITY = State()
+    FILTERS = State()
+    FILTER_RESULTS = State()
     BLACKLIST = State()
     BLACKLIST_USERS = State()
     BLACKLIST_BLOCK = State()

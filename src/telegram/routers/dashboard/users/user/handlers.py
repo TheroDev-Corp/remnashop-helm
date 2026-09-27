@@ -85,6 +85,12 @@ _USER_LIST_STATES = {
     DashboardUsers.RECENT_ACTIVITY.state: DashboardUsers.RECENT_ACTIVITY,
     DashboardUsers.BLACKLIST_USERS.state: DashboardUsers.BLACKLIST_USERS,
     DashboardUsers.SEARCH_RESULTS.state: DashboardUsers.SEARCH_RESULTS,
+    DashboardUsers.FILTER_RESULTS.state: DashboardUsers.FILTER_RESULTS,
+}
+# Lists rebuilt from start_data: the key their payload has to be restored under.
+_USER_LIST_PAYLOAD_KEYS = {
+    DashboardUsers.SEARCH_RESULTS: "found_users",
+    DashboardUsers.FILTER_RESULTS: "user_filter",
 }
 
 
@@ -93,7 +99,7 @@ async def start_user_window(
     target_user_id: int,
     from_referral_user_id: Optional[int] = None,
     list_origin: Optional[str] = None,
-    list_payload: Optional[list] = None,
+    list_payload: Optional[list | str] = None,
 ) -> None:
     data: dict = {TARGET_USER_ID: target_user_id}
     if from_referral_user_id is not None:
@@ -122,12 +128,13 @@ async def on_back_to_list(
         return
 
     data: dict = {}
-    if state == DashboardUsers.SEARCH_RESULTS:
+    payload_key = _USER_LIST_PAYLOAD_KEYS.get(state)
+    if payload_key:
         payload = dialog_manager.start_data.get(USER_LIST_PAYLOAD)  # type: ignore[union-attr]
         if not payload:
             await dialog_manager.start(state=DashboardUsers.MAIN, mode=StartMode.RESET_STACK)
             return
-        data["found_users"] = payload
+        data[payload_key] = payload
 
     await dialog_manager.start(state=state, data=data, mode=StartMode.RESET_STACK)
 

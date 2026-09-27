@@ -3,16 +3,27 @@ from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
-from src.core.enums import BannerName
+from src.core.enums import BannerName, UserFilter
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import Dashboard, DashboardUsers
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
-from src.telegram.widgets.kbd import Button, ListGroup, Row, ScrollingGroup, Select, Start, SwitchTo
+from src.telegram.widgets.kbd import (
+    Button,
+    Column,
+    ListGroup,
+    Row,
+    ScrollingGroup,
+    Select,
+    Start,
+    SwitchTo,
+)
 
 from .getters import (
     blacklist_getter,
     blacklist_sources_getter,
     blacklist_users_getter,
+    filter_results_getter,
+    filters_getter,
     recent_activity_getter,
     recent_registered_getter,
     search_results_getter,
@@ -21,6 +32,7 @@ from .handlers import (
     on_blacklist_view,
     on_block_input,
     on_clear_blocked_ids,
+    on_filter_select,
     on_source_add_input,
     on_source_delete,
     on_source_sync,
@@ -51,6 +63,13 @@ users = Window(
             text=I18nFormat("btn-users.recent-activity"),
             id="recent_activity",
             state=DashboardUsers.RECENT_ACTIVITY,
+        ),
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-users.filters"),
+            id="filters",
+            state=DashboardUsers.FILTERS,
         ),
     ),
     Row(
@@ -173,6 +192,64 @@ search_results = Window(
     IgnoreUpdate(),
     state=DashboardUsers.SEARCH_RESULTS,
     getter=search_results_getter,
+)
+
+filters = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-users-filters"),
+    Column(
+        Select(
+            text=I18nFormat(
+                "btn-users.filter-choice",
+                filter=F["item"]["filter"],
+                count=F["item"]["count"],
+            ),
+            id="filter",
+            item_id_getter=lambda item: item["filter"],
+            items="filters",
+            type_factory=UserFilter,
+            on_click=on_filter_select,
+        ),
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardUsers.MAIN,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=DashboardUsers.FILTERS,
+    getter=filters_getter,
+)
+
+filter_results = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-users-filter-results", filter=F["filter"], count=F["count"]),
+    ScrollingGroup(
+        Select(
+            text=Format("{item.name} ({item.contact_label})"),
+            id="user",
+            item_id_getter=lambda item: item.id,
+            items="users",
+            type_factory=int,
+            on_click=on_user_select,
+        ),
+        id="scroll",
+        width=1,
+        height=7,
+        hide_on_single_page=True,
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardUsers.FILTERS,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=DashboardUsers.FILTER_RESULTS,
+    getter=filter_results_getter,
 )
 
 
@@ -318,6 +395,8 @@ router = Dialog(
     recent_registered,
     recent_activity,
     search_results,
+    filters,
+    filter_results,
     blacklist,
     blacklist_users,
     blacklist_block,

@@ -2,7 +2,7 @@ from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
 from src.application.dto import UserDto
-from src.core.enums import Role
+from src.core.enums import Role, UserFilter
 
 
 @runtime_checkable
@@ -97,6 +97,10 @@ class UserDao(Protocol):
     async def get_with_expired_subscription(self) -> list[UserDto]: ...
 
     async def get_with_trial_subscription(self) -> list[UserDto]: ...
+
+    async def get_by_filter(self, user_filter: UserFilter) -> list[UserDto]: ...
+
+    async def count_by_filters(self) -> dict[UserFilter, int]: ...
 
     async def count_new(self, days: int) -> int: ...
 

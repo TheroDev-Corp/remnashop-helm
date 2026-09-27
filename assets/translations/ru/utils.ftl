@@ -451,6 +451,18 @@ button-type = { $button_type ->
     *[OTHER] { $button_type }
 }
 
+user-filter = { $filter ->
+    [ACTIVE] 🟢 Активные
+    [EXPIRING] ⏳ Истекают за 7 дней
+    [EXPIRED] 🔴 Истекшие
+    [LIMITED] 🟡 Исчерпан трафик
+    [DISABLED] ⚫ Отключенные
+    [TRIAL] 🎁 Пробный период
+    [NO_SUBSCRIPTION] ⚪ Без подписки
+    [BOT_BLOCKED] 🚷 Заблокировали бота
+    *[OTHER] { $filter }
+}
+
 notification-type = { $notification_type ->
     [SYSTEM] Система
     [EXPIRES_IN_3_DAYS] Подписка истекает (3+ дня)

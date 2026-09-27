@@ -65,6 +65,17 @@ class BroadcastAudience(UpperStrEnum):
     TRIAL = auto()
 
 
+class UserFilter(UpperStrEnum):
+    ACTIVE = auto()
+    EXPIRING = auto()  # active, ends within a week
+    EXPIRED = auto()
+    LIMITED = auto()
+    DISABLED = auto()
+    TRIAL = auto()
+    NO_SUBSCRIPTION = auto()
+    BOT_BLOCKED = auto()
+
+
 class PlanType(UpperStrEnum):
     TRAFFIC = auto()
     DEVICES = auto()

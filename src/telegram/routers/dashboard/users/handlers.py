@@ -27,6 +27,7 @@ from src.application.use_cases.user.commands.blocking import (
 )
 from src.application.use_cases.user.queries.search import SearchUsers, SearchUsersDto
 from src.core.constants import USER_KEY
+from src.core.enums import UserFilter
 from src.core.utils.validators import is_valid_url
 from src.telegram.states import DashboardUsers
 from src.telegram.utils import is_double_click
@@ -84,13 +85,26 @@ async def on_user_select(
 
     context = dialog_manager.current_context()
     origin = context.state
-    payload = context.start_data.get("found_users") if context.start_data else None  # type: ignore[union-attr]
+    start_data = context.start_data or {}
+    payload = start_data.get("found_users") or start_data.get("user_filter")  # type: ignore[union-attr]
 
     await start_user_window(
         manager=dialog_manager,
         target_user_id=selected_user,
         list_origin=origin.state,
         list_payload=payload,
+    )
+
+
+async def on_filter_select(
+    callback: CallbackQuery,
+    widget: Select,
+    dialog_manager: DialogManager,
+    selected_filter: UserFilter,
+) -> None:
+    await dialog_manager.start(
+        state=DashboardUsers.FILTER_RESULTS,
+        data={"user_filter": selected_filter.value},
     )
 
 
