@@ -250,7 +250,9 @@ def business(request: pytest.FixtureRequest) -> Any:
         ttl=params.get("ttl", 60.0),
         timeout=params.get("timeout", 5.0),
     )
-    collector = register_business_collector(provider)
+    collector = register_business_collector(
+        provider, panel_overlap=params.get("panel_overlap", True)
+    )
     try:
         yield SimpleNamespace(provider=provider, collector=collector, container=container)
     finally:
@@ -596,3 +598,30 @@ async def test_a_taken_port_disables_the_exporter_instead_of_failing_the_process
         await second.stop()
     finally:
         await first.stop()
+
+
+# --------------------------------------------------------- series duplicating the panel's own
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("business", [{"panel_overlap": False}], indirect=True)
+async def test_panel_overlapping_series_are_hidden_by_default(business: Any) -> None:
+    """Remnawave already exports users_status / users_total; ours stay in the code but off."""
+    await business.provider.ensure_fresh()
+
+    assert REGISTRY.get_sample_value("remnashop_subscriptions", {"status": "expired"}) is None
+    assert REGISTRY.get_sample_value("remnashop_users", {"state": "total"}) is None
+    # Bot-only states keep being exported: the panel has no idea about them.
+    assert REGISTRY.get_sample_value("remnashop_users", {"state": "blocked"}) is not None
+    assert REGISTRY.get_sample_value("remnashop_subscriptions_all") is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("business", [{"panel_overlap": True}], indirect=True)
+async def test_panel_overlapping_series_can_be_turned_on(business: Any) -> None:
+    await business.provider.ensure_fresh()
+
+    assert REGISTRY.get_sample_value("remnashop_subscriptions", {"status": "expired"}) == (
+        SUBSCRIPTIONS.total_expired
+    )
+    assert REGISTRY.get_sample_value("remnashop_users", {"state": "total"}) == USERS.total_users

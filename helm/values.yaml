@@ -24,6 +24,11 @@ config:
     cacheTtl: 45
     # Таймаут одного прохода сбора бизнес-метрик, сек.
     timeout: 25
+    # Серии, дублирующие метрики самой панели (users_status / users_total):
+    # remnashop_subscriptions по статусам и remnashop_users{state="total"}.
+    # Считают только юзеров бота, поэтому скрыты по умолчанию — включите,
+    # если хотите сравнивать обе стороны на одном графике.
+    panelOverlap: false
     # Аннотации для скрейпа вешаются на Service: vmagent ходит по job
     # kubernetes-service-endpoints и читает prometheus.io/* именно с сервисов.
     serviceAnnotations: true

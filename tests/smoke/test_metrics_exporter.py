@@ -54,11 +54,16 @@ async def test_exported_numbers_equal_the_interactor_results(app: Any) -> None:
         subscriptions = await (await request.get(GetSubscriptionStatistics)).system()
 
     provider = _business_provider(app)
-    collector = register_business_collector(provider)
+    # panel_overlap: also export the two series that Remnawave itself reports, so this test
+    # checks every gauge the exporter can produce.
+    collector = register_business_collector(provider, panel_overlap=True)
     try:
         await provider.ensure_fresh()
         assert REGISTRY.get_sample_value("remnashop_users", {"state": "total"}) == (
             users.total_users
+        )
+        assert REGISTRY.get_sample_value("remnashop_users", {"state": "with_subscription"}) == (
+            users.users_with_subscription
         )
         assert REGISTRY.get_sample_value("remnashop_subscriptions", {"status": "active"}) == (
             subscriptions.total_active
@@ -66,6 +71,7 @@ async def test_exported_numbers_equal_the_interactor_results(app: Any) -> None:
         assert REGISTRY.get_sample_value("remnashop_subscriptions", {"status": "expired"}) == (
             subscriptions.total_expired
         )
+        assert REGISTRY.get_sample_value("remnashop_subscriptions_all") == subscriptions.total
     finally:
         unregister_business_collector(collector)
 

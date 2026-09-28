@@ -181,8 +181,10 @@ def _labeled(name: str, documentation: str, labels: tuple[str, ...]) -> GaugeMet
 class BusinessCollector:
     """Renders the cached snapshot; yields nothing while no snapshot exists."""
 
-    def __init__(self, provider: BusinessMetricsProvider) -> None:
+    def __init__(self, provider: BusinessMetricsProvider, panel_overlap: bool = False) -> None:
         self._provider = provider
+        # Series that duplicate what the Remnawave panel already exports (see MetricsConfig).
+        self._panel_overlap = panel_overlap
 
     def describe(self) -> list[Metric]:
         return []
@@ -199,19 +201,20 @@ class BusinessCollector:
         yield from self._referrals(snapshot)
         yield from self._integrity(snapshot)
 
-    @staticmethod
-    def _subscriptions(snapshot: BusinessSnapshot) -> Iterator[Metric]:
+    def _subscriptions(self, snapshot: BusinessSnapshot) -> Iterator[Metric]:
         stats = snapshot.subscriptions
-        by_status = _labeled(
-            "remnashop_subscriptions",
-            "Current subscriptions by status (DELETED excluded)",
-            ("status",),
-        )
-        by_status.add_metric(["active"], stats.total_active)
-        by_status.add_metric(["disabled"], stats.total_disabled)
-        by_status.add_metric(["limited"], stats.total_limited)
-        by_status.add_metric(["expired"], stats.total_expired)
-        yield by_status
+        if self._panel_overlap:
+            # Panel counterpart: users_status (counts every panel user, not only bot ones).
+            by_status = _labeled(
+                "remnashop_subscriptions",
+                "Current subscriptions by status (DELETED excluded)",
+                ("status",),
+            )
+            by_status.add_metric(["active"], stats.total_active)
+            by_status.add_metric(["disabled"], stats.total_disabled)
+            by_status.add_metric(["limited"], stats.total_limited)
+            by_status.add_metric(["expired"], stats.total_expired)
+            yield by_status
 
         yield _gauge(
             "remnashop_subscriptions_all",
@@ -245,11 +248,12 @@ class BusinessCollector:
             expiring.add_metric([name], snapshot.expiring.get(name, 0))
         yield expiring
 
-    @staticmethod
-    def _users(snapshot: BusinessSnapshot) -> Iterator[Metric]:
+    def _users(self, snapshot: BusinessSnapshot) -> Iterator[Metric]:
         stats = snapshot.users
         by_state = _labeled("remnashop_users", "Bot users by state", ("state",))
-        by_state.add_metric(["total"], stats.total_users)
+        if self._panel_overlap:
+            # Panel counterpart: users_total.
+            by_state.add_metric(["total"], stats.total_users)
         by_state.add_metric(["with_subscription"], stats.users_with_subscription)
         by_state.add_metric(["without_subscription"], stats.users_without_subscription)
         by_state.add_metric(["with_trial"], stats.users_with_trial)
@@ -415,8 +419,10 @@ class BusinessCollector:
         )
 
 
-def register_business_collector(provider: BusinessMetricsProvider) -> BusinessCollector:
-    collector = BusinessCollector(provider)
+def register_business_collector(
+    provider: BusinessMetricsProvider, panel_overlap: bool = False
+) -> BusinessCollector:
+    collector = BusinessCollector(provider, panel_overlap=panel_overlap)
     REGISTRY.register(collector)  # type: ignore[arg-type]
     return collector
 

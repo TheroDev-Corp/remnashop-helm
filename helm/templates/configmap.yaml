@@ -29,3 +29,4 @@ data:
   METRICS_PATH: {{ .Values.config.metrics.path | quote }}
   METRICS_BUSINESS_CACHE_TTL: {{ .Values.config.metrics.cacheTtl | quote }}
   METRICS_BUSINESS_TIMEOUT: {{ .Values.config.metrics.timeout | quote }}
+  METRICS_PANEL_OVERLAP: {{ .Values.config.metrics.panelOverlap | quote }}

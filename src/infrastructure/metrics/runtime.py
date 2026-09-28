@@ -68,7 +68,9 @@ class MetricsRuntime:
                 timeout=metrics.business_timeout,
                 context=self._business_context,
             )
-            self._collector = register_business_collector(self._provider)
+            self._collector = register_business_collector(
+                self._provider, panel_overlap=metrics.panel_overlap
+            )
             before_scrape = self._provider.ensure_fresh
 
         self._server = MetricsServer(metrics, before_scrape=before_scrape)
