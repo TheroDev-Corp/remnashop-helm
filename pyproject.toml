@@ -81,6 +81,9 @@ exclude = ["venv", ".venv", ".idea"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# tests/unit and tests/smoke have files with the same basename (no __init__.py packages),
+# which the default "prepend" import mode cannot collect together.
+addopts = "--import-mode=importlib"
 testpaths = ["tests"]
 pythonpath = ["."]
 

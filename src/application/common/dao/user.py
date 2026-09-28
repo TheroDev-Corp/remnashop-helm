@@ -2,7 +2,7 @@ from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
 from src.application.dto import UserDto
-from src.core.enums import Role
+from src.core.enums import Role, UserFilter, UserSource
 
 
 @runtime_checkable
@@ -97,6 +97,24 @@ class UserDao(Protocol):
     async def get_with_expired_subscription(self) -> list[UserDto]: ...
 
     async def get_with_trial_subscription(self) -> list[UserDto]: ...
+
+    async def get_by_filter(
+        self,
+        user_filter: UserFilter,
+        *,
+        source: UserSource = UserSource.ANY,
+        not_in_bot: bool = False,
+    ) -> list[UserDto]:
+        """`source`: panel migration or self-registered; `not_in_bot`: no sign the user ever
+        wrote the bot (a heuristic over the panel-import defaults, not a recorded fact)."""
+        ...
+
+    async def count_by_filters(
+        self,
+        *,
+        source: UserSource = UserSource.ANY,
+        not_in_bot: bool = False,
+    ) -> dict[UserFilter, int]: ...
 
     async def count_new(self, days: int) -> int: ...
 

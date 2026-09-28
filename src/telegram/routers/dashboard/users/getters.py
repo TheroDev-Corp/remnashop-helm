@@ -9,7 +9,10 @@ from src.application.common.dao import SettingsDao, UserDao
 from src.application.dto import TelegramUserDto, UserDto
 from src.application.use_cases.user.queries.activity import GetRecentActivityUsers
 from src.core.constants import RECENT_REGISTERED_MAX_COUNT
+from src.core.enums import UserFilter, UserSource
 from src.core.utils.converters import percent
+
+from .handlers import get_filter_query
 
 
 @inject
@@ -46,6 +49,43 @@ async def recent_activity_getter(
 ) -> dict[str, Any]:
     users = await get_recent_activity_users.system([user.id])
     return {"recent_activity_users": users}
+
+
+@inject
+async def filters_getter(
+    dialog_manager: DialogManager,
+    user_dao: FromDishka[UserDao],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    query = get_filter_query(dialog_manager)
+    counts = await user_dao.count_by_filters(
+        source=UserSource(query["source"]), not_in_bot=query["not_in_bot"]
+    )
+    return {
+        "filters": [{"filter": f, "count": count} for f, count in counts.items()],
+        "source": query["source"],
+        "not_in_bot": query["not_in_bot"],
+    }
+
+
+@inject
+async def filter_results_getter(
+    dialog_manager: DialogManager,
+    user_dao: FromDishka[UserDao],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    query = get_filter_query(dialog_manager)
+    user_filter = UserFilter(query["filter"])
+    users = await user_dao.get_by_filter(
+        user_filter, source=UserSource(query["source"]), not_in_bot=query["not_in_bot"]
+    )
+    return {
+        "filter": user_filter,
+        "users": users,
+        "count": len(users),
+        "source": query["source"],
+        "not_in_bot": query["not_in_bot"],
+    }
 
 
 @inject

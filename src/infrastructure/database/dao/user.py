@@ -6,12 +6,27 @@ from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Text,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    or_,
+    select,
+    true,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.application.common.dao import UserDao
 from src.application.dto import UserDto
-from src.core.enums import Role, SubscriptionStatus
+from src.core.constants import IMPORTED_TAG
+from src.core.enums import Role, SubscriptionStatus, UserFilter, UserSource
+from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Referral, Subscription, User
 
 
@@ -441,6 +456,113 @@ class UserDaoImpl(UserDao):
         )
         result = await self.session.execute(stmt)
         return self._convert_to_dto_list(list(result.scalars()))
+
+    @staticmethod
+    def _filter_conditions() -> dict[UserFilter, ColumnElement[bool]]:
+        # Over users LEFT JOIN their current subscription. A past expire_at counts as expired
+        # even while the status is still ACTIVE (the panel's `user.expired` webhook may be lost).
+        now = datetime_now()
+        status = Subscription.status
+        is_active = and_(status == SubscriptionStatus.ACTIVE, Subscription.expire_at > now)
+        return {
+            UserFilter.ALL: true(),
+            UserFilter.ACTIVE: is_active,
+            UserFilter.EXPIRING: and_(is_active, Subscription.expire_at <= now + timedelta(days=7)),
+            UserFilter.EXPIRED: or_(
+                status == SubscriptionStatus.EXPIRED,
+                and_(status == SubscriptionStatus.ACTIVE, Subscription.expire_at <= now),
+            ),
+            UserFilter.LIMITED: status == SubscriptionStatus.LIMITED,
+            UserFilter.DISABLED: status == SubscriptionStatus.DISABLED,
+            UserFilter.TRIAL: and_(is_active, Subscription.is_trial.is_(True)),
+            UserFilter.NO_SUBSCRIPTION: User.current_subscription_id.is_(None),
+            UserFilter.BOT_BLOCKED: User.is_bot_blocked.is_(True),
+        }
+
+    @staticmethod
+    def _from_panel() -> ColumnElement[bool]:
+        # Any of the user's subscriptions came from the panel: stays true after a purchase.
+        imported_subscription = aliased(Subscription)
+        return exists().where(
+            imported_subscription.user_id == User.id,
+            imported_subscription.plan_snapshot["name"].as_string() == IMPORTED_TAG,
+        )
+
+    @classmethod
+    def _never_wrote_the_bot(cls) -> ColumnElement[bool]:
+        # A heuristic, not a recorded fact: nothing stores the first private contact with the
+        # bot, and adding such a column would mean migrating the production database, which the
+        # owner does not want. An exact bot_started_at can be introduced later; until then the
+        # signal is the panel import's own defaults - the sync creates users with no username
+        # and the telegram id as the name, and the first update from Telegram overwrites both -
+        # plus users who have no Telegram account to write from at all.
+        return or_(
+            User.telegram_id.is_(None),
+            and_(
+                User.username.is_(None),
+                User.name == User.telegram_id.cast(Text),
+                cls._from_panel(),
+            ),
+        )
+
+    @classmethod
+    def _scope_conditions(cls, source: UserSource, not_in_bot: bool) -> list[ColumnElement[bool]]:
+        # Single home for both scope conditions so the segment list and the counters shown on
+        # the filter buttons can never drift apart.
+        conditions: list[ColumnElement[bool]] = []
+        if source != UserSource.ANY:
+            from_panel = cls._from_panel()
+            conditions.append(from_panel if source == UserSource.PANEL else ~from_panel)
+        if not_in_bot:
+            conditions.append(cls._never_wrote_the_bot())
+        return conditions
+
+    async def get_by_filter(
+        self,
+        user_filter: UserFilter,
+        *,
+        source: UserSource = UserSource.ANY,
+        not_in_bot: bool = False,
+    ) -> list[UserDto]:
+        # Loads the whole segment for an in-memory scrolling list: fine for tens of thousands
+        # of users; beyond that switch the dialog to LIMIT/OFFSET paging.
+        if user_filter == UserFilter.EXPIRING:
+            order = Subscription.expire_at.asc()
+        elif user_filter == UserFilter.EXPIRED:
+            order = Subscription.expire_at.desc()
+        else:
+            order = User.created_at.desc()
+
+        stmt = (
+            select(User)
+            .outerjoin(Subscription, User.current_subscription_id == Subscription.id)
+            .where(
+                self._filter_conditions()[user_filter],
+                *self._scope_conditions(source, not_in_bot),
+            )
+            .order_by(order)
+        )
+        result = await self.session.scalars(stmt)
+        db_users = cast(list, result.all())
+
+        logger.debug(f"Retrieved '{len(db_users)}' users for filter '{user_filter}'")
+        return self._convert_to_dto_list(db_users)
+
+    async def count_by_filters(
+        self,
+        *,
+        source: UserSource = UserSource.ANY,
+        not_in_bot: bool = False,
+    ) -> dict[UserFilter, int]:
+        conditions = self._filter_conditions()
+        stmt = (
+            select(*(func.count(case((cond, 1))).label(f.value) for f, cond in conditions.items()))
+            .select_from(User)
+            .outerjoin(Subscription, User.current_subscription_id == Subscription.id)
+            .where(*self._scope_conditions(source, not_in_bot))
+        )
+        row = (await self.session.execute(stmt)).one()
+        return {f: int(row._mapping[f.value] or 0) for f in conditions}
 
     async def get_with_trial_subscription(self) -> list[UserDto]:
         stmt = (

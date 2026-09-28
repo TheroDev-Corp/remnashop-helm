@@ -134,6 +134,17 @@ btn-users =
     .search = 🔍 Поиск пользователя
     .recent-registered = 🆕 Последние зарегистрированные
     .recent-activity = 📝 Последние взаимодействующие
+    .filters = 🔎 Фильтры
+    .filter-choice = { user-filter } ({ $count })
+    .filter-source = { $source ->
+        [PANEL] 📥 Из панели
+        [SELF] 🙋 Пришли сами
+        *[ANY] 👥 Источник: все
+    }
+    .filter-not-in-bot = { $enabled ->
+        [1] ✅
+        *[0] ⬜
+    } Не в боте
     .blacklist = 🚫 Черный список
     .unblock-all = 🔓 Разблокировать всех
     .blacklist-view = 🗒️ Список заблокированных

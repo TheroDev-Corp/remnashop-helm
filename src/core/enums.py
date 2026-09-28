@@ -65,6 +65,24 @@ class BroadcastAudience(UpperStrEnum):
     TRIAL = auto()
 
 
+class UserFilter(UpperStrEnum):
+    ALL = auto()
+    ACTIVE = auto()
+    EXPIRING = auto()  # active, ends within a week
+    EXPIRED = auto()
+    LIMITED = auto()
+    DISABLED = auto()
+    TRIAL = auto()
+    NO_SUBSCRIPTION = auto()
+    BOT_BLOCKED = auto()
+
+
+class UserSource(UpperStrEnum):
+    ANY = auto()
+    PANEL = auto()  # came from the Remnawave / 3X-UI migration
+    SELF = auto()  # registered on their own (bot or web)
+
+
 class PlanType(UpperStrEnum):
     TRAFFIC = auto()
     DEVICES = auto()
