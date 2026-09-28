@@ -32,17 +32,6 @@ config:
     # Аннотации для скрейпа вешаются на Service: vmagent ходит по job
     # kubernetes-service-endpoints и читает prometheus.io/* именно с сервисов.
     serviceAnnotations: true
-    # Дашборд Grafana (helm/dashboards/remnashop.json) в ConfigMap для сайдкара Grafana
-    # из victoria-metrics-k8s-stack / kube-prometheus-stack.
-    grafanaDashboard:
-      enabled: true
-      # Лейбл, по которому сайдкар ищет дашборды (sidecar.dashboards.label в чарте Grafana).
-      labels:
-        grafana_dashboard: "1"
-      # Пусто — namespace релиза. Укажите namespace Grafana, если сайдкар ищет только в нём.
-      namespace: ""
-      # Например, папка в Grafana: grafana_folder: "Remnashop"
-      annotations: {}
     # Под для `helm test`: проверяет, что экспортеры приложения и воркера отдают метрики.
     test:
       image: "busybox:1.36"
