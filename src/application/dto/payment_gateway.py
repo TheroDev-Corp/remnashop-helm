@@ -108,6 +108,14 @@ class FreeKassaGatewaySettingsDto(GatewaySettingsDto):
     customer_email: Optional[str] = None
     customer_ip: Optional[str] = None
 
+    @property
+    def is_configured(self) -> bool:
+        return (
+            self.shop_id is not None
+            and self.api_key is not None
+            and self.secret_word_2 is not None
+        )
+
 
 @dataclass(kw_only=True)
 class MulenPayGatewaySettingsDto(GatewaySettingsDto):
@@ -166,6 +174,14 @@ class ValutixGatewaySettingsDto(GatewaySettingsDto):
     api_key: Optional[SecretStr] = None
 
 
+@dataclass(kw_only=True)
+class LavaPayGatewaySettingsDto(GatewaySettingsDto):
+    type: Literal[PaymentGatewayType.LAVAPAY] = PaymentGatewayType.LAVAPAY
+    shop_id: Optional[str] = None
+    api_key: Optional[SecretStr] = None
+    secret_key_2: Optional[SecretStr] = None
+
+
 AnyGatewaySettingsDto = Union[
     TelegramStarsGatewaySettingsDto,
     YooKassaGatewaySettingsDto,
@@ -181,4 +197,5 @@ AnyGatewaySettingsDto = Union[
     UrlPayGatewaySettingsDto,
     WataGatewaySettingsDto,
     ValutixGatewaySettingsDto,
+    LavaPayGatewaySettingsDto,
 ]
