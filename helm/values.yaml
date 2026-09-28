@@ -24,8 +24,9 @@ config:
     cacheTtl: 45
     # Таймаут одного прохода сбора бизнес-метрик, сек.
     timeout: 25
-    # Аннотации для скрейпа на подах app/worker.
-    podAnnotations: true
+    # Аннотации для скрейпа вешаются на Service: vmagent ходит по job
+    # kubernetes-service-endpoints и читает prometheus.io/* именно с сервисов.
+    serviceAnnotations: true
 
 secrets:
   existingSecret: ""
@@ -51,7 +52,9 @@ app:
   resources:
     limits:
       cpu: 500m
-      memory: 512Mi
+      # Воркер и без экспортера держится у 456Mi; второй HTTP-сервер
+      # добавляет немного, поэтому лимит поднят, чтобы не словить OOMKill.
+      memory: 768Mi
     requests:
       cpu: 100m
       memory: 256Mi
@@ -65,14 +68,17 @@ worker:
   # Параллелизм внутри процесса задаётся max-async-tasks, масштабирование — replicaCount.
   processes: 1
   metrics:
-    # Воркер отдаёт runtime/БД/taskiq/Remnawave метрики на своём порту.
+    # Воркер отдаёт runtime/БД/taskiq/Remnawave метрики на своём порту
+    # через отдельный headless Service (без него endpointslices не появятся).
     # Бизнес-гейджи здесь выключены: это глобальные цифры из БД, и копия на каждую
     # реплику воркера только продублировала бы одно и то же число под разными лейблами.
     enabled: true
   resources:
     limits:
       cpu: 500m
-      memory: 512Mi
+      # Воркер и без экспортера держится у 456Mi; второй HTTP-сервер
+      # добавляет немного, поэтому лимит поднят, чтобы не словить OOMKill.
+      memory: 768Mi
     requests:
       cpu: 100m
       memory: 256Mi

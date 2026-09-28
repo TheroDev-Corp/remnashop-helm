@@ -16,12 +16,6 @@ spec:
       app.kubernetes.io/component: main-app
   template:
     metadata:
-      {{- if and .Values.config.metrics.enabled .Values.config.metrics.podAnnotations }}
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: {{ .Values.config.metrics.port | quote }}
-        prometheus.io/path: {{ .Values.config.metrics.path | quote }}
-      {{- end }}
       labels:
         app.kubernetes.io/name: {{ include "remnashop.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
