@@ -14,6 +14,7 @@ from prometheus_client import (
     Gauge,
     Histogram,
     Info,
+    disable_created_metrics,
 )
 from prometheus_client.gc_collector import GCCollector
 from prometheus_client.metrics_core import GaugeMetricFamily, InfoMetricFamily, Metric
@@ -24,6 +25,10 @@ from src.__version__ import __version__
 from src.core.utils.time import get_uptime
 
 NAMESPACE: Final[str] = "remnashop"
+
+# Every counter/histogram would otherwise export a twin `*_created` gauge (a start timestamp
+# nobody graphs), doubling the series count for nothing.
+disable_created_metrics()
 
 REGISTRY: Final[CollectorRegistry] = CollectorRegistry(auto_describe=True)
 

@@ -79,8 +79,12 @@ class SmokeProvider(Provider):
 
     @provide
     async def get_remnawave_sdk(self) -> AsyncIterator[RemnawaveSDK]:
+        from src.infrastructure.metrics import MetricsTransport
+
+        # Wrapped like the production provider does, so the panel instrumentation is exercised.
         client = httpx.AsyncClient(
-            base_url="https://panel.smoke.test/api", transport=self._panel.transport()
+            base_url="https://panel.smoke.test/api",
+            transport=MetricsTransport(self._panel.transport()),
         )
         sdk = RemnawaveSDK(client)
         install_sdk_stubs(sdk, self._panel)
