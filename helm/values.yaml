@@ -13,6 +13,40 @@ config:
   databaseName: "remnashop"
   databaseUser: "remnashop"
 
+  # Экспорт метрик Prometheus (скрейпит VictoriaMetrics).
+  # Порт отдельный от appPort и наружу не публикуется — авторизации нет намеренно.
+  metrics:
+    enabled: true
+    port: 9100
+    path: "/metrics"
+    # TTL кэша бизнес-метрик, сек. Скрейп чаще TTL отдаёт закэшированные значения
+    # и не дёргает тяжёлые агрегирующие запросы.
+    cacheTtl: 45
+    # Таймаут одного прохода сбора бизнес-метрик, сек.
+    timeout: 25
+    # Серии, дублирующие метрики самой панели (users_status / users_total):
+    # remnashop_subscriptions по статусам и remnashop_users{state="total"}.
+    # Считают только юзеров бота, поэтому скрыты по умолчанию — включите,
+    # если хотите сравнивать обе стороны на одном графике.
+    panelOverlap: false
+    # Аннотации для скрейпа вешаются на Service: vmagent ходит по job
+    # kubernetes-service-endpoints и читает prometheus.io/* именно с сервисов.
+    serviceAnnotations: true
+    # Дашборд Grafana (helm/dashboards/remnashop.json) в ConfigMap для сайдкара Grafana
+    # из victoria-metrics-k8s-stack / kube-prometheus-stack.
+    grafanaDashboard:
+      enabled: true
+      # Лейбл, по которому сайдкар ищет дашборды (sidecar.dashboards.label в чарте Grafana).
+      labels:
+        grafana_dashboard: "1"
+      # Пусто — namespace релиза. Укажите namespace Grafana, если сайдкар ищет только в нём.
+      namespace: ""
+      # Например, папка в Grafana: grafana_folder: "Remnashop"
+      annotations: {}
+    # Под для `helm test`: проверяет, что экспортеры приложения и воркера отдают метрики.
+    test:
+      image: "busybox:1.36"
+
 secrets:
   existingSecret: ""
   appCryptKey: "change_me_44_chars_base64_string="
@@ -37,7 +71,8 @@ app:
   resources:
     limits:
       cpu: 500m
-      memory: 512Mi
+      # Экспортер метрик — второй HTTP-сервер в процессе, запас под него.
+      memory: 768Mi
     requests:
       cpu: 100m
       memory: 256Mi
@@ -46,10 +81,22 @@ app:
 # Taskiq Worker (Фоновые задачи)
 worker:
   replicaCount: 1
+  # Количество процессов taskiq в одном поде. Держим 1: порт метрик может занять только
+  # один процесс пода, при 2+ метрики выполнения задач второго процесса не экспортировались бы.
+  # Параллелизм внутри процесса задаётся max-async-tasks, масштабирование — replicaCount.
+  processes: 1
+  metrics:
+    # Воркер отдаёт runtime/БД/taskiq/Remnawave метрики на своём порту
+    # через отдельный headless Service (без него endpointslices не появятся).
+    # Бизнес-гейджи здесь выключены: это глобальные цифры из БД, и копия на каждую
+    # реплику воркера только продублировала бы одно и то же число под разными лейблами.
+    enabled: true
   resources:
     limits:
       cpu: 500m
-      memory: 512Mi
+      # Воркер и без экспортера держится у 456Mi; второй HTTP-сервер
+      # добавляет немного, поэтому лимит поднят, чтобы не словить OOMKill.
+      memory: 768Mi
     requests:
       cpu: 100m
       memory: 256Mi

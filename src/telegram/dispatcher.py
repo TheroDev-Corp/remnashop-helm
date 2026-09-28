@@ -8,6 +8,7 @@ from loguru import logger
 
 from src.core.config import AppConfig
 from src.infrastructure.common import json
+from src.infrastructure.metrics import setup_update_metrics
 from src.telegram.filters import setup_global_filters
 from src.telegram.message_manager import MessageManager
 from src.telegram.middlewares import setup_middlewares
@@ -44,6 +45,9 @@ def get_bg_manager_factory(dispatcher: Dispatcher) -> BgManagerFactory:
 
 
 def setup_dispatcher(dispatcher: Dispatcher) -> None:
+    # Registered first on the `update` observer so it stays outermost: it only measures and
+    # never resolves dependencies, so it cannot disturb the dishka/error middleware order.
+    setup_update_metrics(dispatcher)
     setup_middlewares(dispatcher)
     setup_global_filters(dispatcher)
     setup_routers(dispatcher)
@@ -53,6 +57,7 @@ def setup_dispatcher(dispatcher: Dispatcher) -> None:
 def setup_worker_dispatcher(dispatcher: Dispatcher) -> None:
     # Background redirects (e.g. Subscription:SUCCESS) start dialogs via bg_manager, which
     # emit AIOGD_UPDATE. Dialog getters rely on USER_KEY, so UserMiddleware must populate it.
+    setup_update_metrics(dispatcher)
     UserMiddleware().setup_outer(dispatcher)
     setup_routers(dispatcher)
     logger.info("Worker dispatcher routers have been configured")

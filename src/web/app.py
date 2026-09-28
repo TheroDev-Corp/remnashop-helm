@@ -8,6 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from src.__version__ import __version__
 from src.core.config import AppConfig
+from src.infrastructure.metrics import setup_http_metrics
 from src.lifespan import lifespan
 
 from .endpoints import (
@@ -43,6 +44,8 @@ def get_app(config: AppConfig, dispatcher: Dispatcher) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Added last, so it wraps every other middleware and observes the response they produce.
+    setup_http_metrics(app)
 
     app.include_router(health_router)
     app.include_router(payments_router)

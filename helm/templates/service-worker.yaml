@@ -1,30 +1,29 @@
+{{- if and .Values.config.metrics.enabled .Values.worker.metrics.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "remnashop.fullname" . }}
+  name: {{ include "remnashop.fullname" . }}-worker-metrics
   labels:
     {{- include "remnashop.labels" . | nindent 4 }}
-  {{- if and .Values.config.metrics.enabled .Values.config.metrics.serviceAnnotations }}
+    app.kubernetes.io/component: taskiq-worker
+  {{- if .Values.config.metrics.serviceAnnotations }}
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: {{ .Values.config.metrics.port | quote }}
     prometheus.io/path: {{ .Values.config.metrics.path | quote }}
   {{- end }}
 spec:
+  # Headless: сервис нужен только ради endpointslices, по которым vmagent
+  # находит поды воркера. Трафик через него не ходит, наружу не публикуется.
   type: ClusterIP
+  clusterIP: None
   ports:
-    - port: {{ .Values.config.appPort }}
-      targetPort: http
-      protocol: TCP
-      name: http
-    {{- if .Values.config.metrics.enabled }}
-    # Не публикуется через ingress: скрейп идёт изнутри кластера.
     - port: {{ .Values.config.metrics.port }}
       targetPort: metrics
       protocol: TCP
       name: metrics
-    {{- end }}
   selector:
     app.kubernetes.io/name: {{ include "remnashop.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: main-app
+    app.kubernetes.io/component: taskiq-worker
+{{- end }}

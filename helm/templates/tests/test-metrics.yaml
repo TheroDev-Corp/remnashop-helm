@@ -1,0 +1,43 @@
+{{- if .Values.config.metrics.enabled }}
+{{- $metrics := .Values.config.metrics }}
+{{- $fullname := include "remnashop.fullname" . }}
+# `helm test <release>`: проверяет в кластере, что экспортеры отвечают и отдают ключевые серии.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ $fullname }}-test-metrics
+  labels:
+    {{- include "remnashop.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: check
+      image: {{ $metrics.test.image | quote }}
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -u
+          # Первый скрейп приложения собирает бизнес-метрики, поэтому таймаут больше METRICS_BUSINESS_TIMEOUT.
+          check() {
+            url="$1"; shift
+            body="$(wget -qO- -T {{ add (int $metrics.timeout) 15 }} "$url")" || { echo "FAIL: $url не отвечает"; exit 1; }
+            for pattern in "$@"; do
+              echo "$body" | grep -q "$pattern" || { echo "FAIL: $url: нет серии '$pattern'"; exit 1; }
+            done
+            echo "OK: $url"
+          }
+          check "http://{{ $fullname }}:{{ $metrics.port }}{{ $metrics.path }}" \
+            '^remnashop_build_info{.*role="app"' \
+            '^remnashop_users{' \
+            '^remnashop_subscriptions_expiring{' \
+            '^remnashop_db_pool_connections{' \
+            '^remnashop_business_collections_total [1-9]'
+          {{- if .Values.worker.metrics.enabled }}
+          check "http://{{ $fullname }}-worker-metrics:{{ $metrics.port }}{{ $metrics.path }}" \
+            '^remnashop_build_info{.*role="worker"' \
+            '^remnashop_db_pool_size '
+          {{- end }}
+{{- end }}

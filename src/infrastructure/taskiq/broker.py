@@ -4,6 +4,7 @@ from taskiq import AsyncResultBackend, SmartRetryMiddleware
 from taskiq_redis import RedisAsyncResultBackend, RedisStreamBroker
 
 from src.core.config import AppConfig
+from src.infrastructure.metrics.taskiq import MetricsMiddleware
 from src.infrastructure.taskiq.middlewares import ErrorMiddleware
 
 
@@ -27,6 +28,7 @@ broker = create_broker(config=AppConfig.get())
 broker.with_middlewares(
     *(
         ErrorMiddleware(),
+        MetricsMiddleware(),
         SmartRetryMiddleware(
             default_retry_count=5,
             default_delay=15,
