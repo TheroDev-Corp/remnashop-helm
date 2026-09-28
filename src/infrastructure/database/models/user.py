@@ -54,11 +54,6 @@ class User(BaseSql, TimestampMixin):
     referral_code_reset_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # First private interaction with the bot; NULL for users only known from the panel/web.
-    bot_started_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
     current_subscription_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("subscriptions.id", ondelete="SET NULL"),
         index=True,

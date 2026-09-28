@@ -67,7 +67,6 @@ class UserDto(BaseDto, TrackableMixin, TimestampMixin):
     is_trial_available: bool = True
     ad_link_id: Optional[int] = None
     referral_code_reset_at: Optional[datetime] = None
-    bot_started_at: Optional[datetime] = None
 
     @property
     def contact_label(self) -> str:

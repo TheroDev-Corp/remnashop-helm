@@ -8,6 +8,7 @@ from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import (
     ColumnElement,
+    Text,
     and_,
     case,
     delete,
@@ -479,18 +480,41 @@ class UserDaoImpl(UserDao):
         }
 
     @staticmethod
-    def _scope_conditions(source: UserSource, not_in_bot: bool) -> list[ColumnElement[bool]]:
+    def _from_panel() -> ColumnElement[bool]:
+        # Any of the user's subscriptions came from the panel: stays true after a purchase.
+        imported_subscription = aliased(Subscription)
+        return exists().where(
+            imported_subscription.user_id == User.id,
+            imported_subscription.plan_snapshot["name"].as_string() == IMPORTED_TAG,
+        )
+
+    @classmethod
+    def _never_wrote_the_bot(cls) -> ColumnElement[bool]:
+        # A heuristic, not a recorded fact: nothing stores the first private contact with the
+        # bot, and adding such a column would mean migrating the production database, which the
+        # owner does not want. An exact bot_started_at can be introduced later; until then the
+        # signal is the panel import's own defaults - the sync creates users with no username
+        # and the telegram id as the name, and the first update from Telegram overwrites both -
+        # plus users who have no Telegram account to write from at all.
+        return or_(
+            User.telegram_id.is_(None),
+            and_(
+                User.username.is_(None),
+                User.name == User.telegram_id.cast(Text),
+                cls._from_panel(),
+            ),
+        )
+
+    @classmethod
+    def _scope_conditions(cls, source: UserSource, not_in_bot: bool) -> list[ColumnElement[bool]]:
+        # Single home for both scope conditions so the segment list and the counters shown on
+        # the filter buttons can never drift apart.
         conditions: list[ColumnElement[bool]] = []
         if source != UserSource.ANY:
-            # Any of the user's subscriptions came from the panel: stays true after a purchase.
-            imported_subscription = aliased(Subscription)
-            from_panel = exists().where(
-                imported_subscription.user_id == User.id,
-                imported_subscription.plan_snapshot["name"].as_string() == IMPORTED_TAG,
-            )
+            from_panel = cls._from_panel()
             conditions.append(from_panel if source == UserSource.PANEL else ~from_panel)
         if not_in_bot:
-            conditions.append(User.bot_started_at.is_(None))
+            conditions.append(cls._never_wrote_the_bot())
         return conditions
 
     async def get_by_filter(

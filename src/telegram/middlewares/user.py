@@ -72,7 +72,6 @@ class UserMiddleware(EventTypedMiddleware):
                     full_name=aiogram_user.full_name,
                     language_code=aiogram_user.language_code,
                     telegram_id=aiogram_user.id,
-                    is_bot_interaction=not is_chat_member_event,
                 )
             )
             await track_user_activity.system(user.id)

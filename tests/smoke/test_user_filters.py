@@ -124,7 +124,7 @@ async def test_panel_imports_not_in_bot_are_filterable_and_manageable(app):
     await owner.click("source")  # ANY -> PANEL
     await owner.click("not_in_bot")
     await owner.click("filter:ALL")
-    assert "из панели" in owner.screen_text() and "не в боте" in owner.screen_text()
+    assert "из панели" in owner.screen_text() and "похоже, не в боте" in owner.screen_text()
     await owner.click(f"user:{user_without_tg.id}")
     await _run_steps(app, owner, ["subscription", "expire_time", "send:10"])
     assert app.panel.users[without_tg["id"]]["expireAt"] != expire_before
@@ -133,7 +133,32 @@ async def test_panel_imports_not_in_bot_are_filterable_and_manageable(app):
     await _run_steps(app, owner, ["back", "back", "back", "expect:DashboardUsers:FILTER_RESULTS"])
     assert owner.has(f"user:{user_with_tg.id}")
 
-    # First message to the bot: still imported, no longer "not in bot".
+    # First message to the bot overwrites the import defaults (username, name): still imported,
+    # no longer "not in bot".
     await TgUser(app, imported_tg, "Imported", "imported").send("/start")
     assert user_with_tg.id in await _filter_ids_scoped(app, UserFilter.ALL, source=UserSource.PANEL)
     assert user_with_tg.id not in await _filter_ids_scoped(app, UserFilter.ALL, **scope)
+
+
+async def test_not_in_bot_ignores_self_registered_users_without_a_username(app):
+    """The heuristic keys on the panel import, not on a missing username alone.
+
+    A Telegram account without a username whose display name happens to be its own id looks
+    exactly like a fresh panel import on the `users` row; only the IMPORTED subscription tells
+    them apart.
+    """
+    from dishka import Scope
+
+    from src.application.common.dao import UserDao
+    from src.core.enums import UserFilter
+    from tests.smoke.harness.client import TgUser
+
+    lookalike_tg = 555_000_999
+    await TgUser(app, lookalike_tg, str(lookalike_tg)).send("/start")
+
+    async with app.container(scope=Scope.REQUEST) as request:
+        dao = await request.get(UserDao)
+        lookalike = await dao.get_by_telegram_id(lookalike_tg)
+    assert lookalike and lookalike.username is None and lookalike.name == str(lookalike_tg)
+
+    assert lookalike.id not in await _filter_ids_scoped(app, UserFilter.ALL, not_in_bot=True)

@@ -105,7 +105,8 @@ class UserDao(Protocol):
         source: UserSource = UserSource.ANY,
         not_in_bot: bool = False,
     ) -> list[UserDto]:
-        """`source`: panel migration or self-registered; `not_in_bot`: never used the bot."""
+        """`source`: panel migration or self-registered; `not_in_bot`: no sign the user ever
+        wrote the bot (a heuristic over the panel-import defaults, not a recorded fact)."""
         ...
 
     async def count_by_filters(
