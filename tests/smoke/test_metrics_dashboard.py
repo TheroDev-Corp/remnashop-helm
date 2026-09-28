@@ -24,7 +24,7 @@ import pytest
 
 pytestmark = [pytest.mark.smoke, pytest.mark.asyncio(loop_scope="session")]
 
-DASHBOARD = Path(__file__).parents[2] / "helm" / "dashboards" / "remnashop.json"
+DASHBOARD = Path(__file__).parents[2] / "dashboards" / "remnashop.json"
 VM_IMAGE = "victoriametrics/victoria-metrics:v1.106.1"
 METRIC_RE = re.compile(r"\b((?:remnashop|process)_[a-z0-9_]+)")
 SUFFIXES = ("_bucket", "_count", "_sum", "_total")
