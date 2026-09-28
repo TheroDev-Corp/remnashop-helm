@@ -65,7 +65,7 @@ secrets:
 app:
   image:
     repository: ghcr.io/therodev-corp/remnashop-helm
-    tag: v0.9.11
+    tag: v0.9.13
     pullPolicy: IfNotPresent
 
   resources:
