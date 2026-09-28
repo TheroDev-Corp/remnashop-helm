@@ -13,6 +13,20 @@ config:
   databaseName: "remnashop"
   databaseUser: "remnashop"
 
+  # Экспорт метрик Prometheus (скрейпит VictoriaMetrics).
+  # Порт отдельный от appPort и наружу не публикуется — авторизации нет намеренно.
+  metrics:
+    enabled: true
+    port: 9100
+    path: "/metrics"
+    # TTL кэша бизнес-метрик, сек. Скрейп чаще TTL отдаёт закэшированные значения
+    # и не дёргает тяжёлые агрегирующие запросы.
+    cacheTtl: 45
+    # Таймаут одного прохода сбора бизнес-метрик, сек.
+    timeout: 25
+    # Аннотации для скрейпа на подах app/worker.
+    podAnnotations: true
+
 secrets:
   existingSecret: ""
   appCryptKey: "change_me_44_chars_base64_string="
@@ -46,6 +60,15 @@ app:
 # Taskiq Worker (Фоновые задачи)
 worker:
   replicaCount: 1
+  # Количество процессов taskiq в одном поде. Держим 1: порт метрик может занять только
+  # один процесс пода, при 2+ метрики выполнения задач второго процесса не экспортировались бы.
+  # Параллелизм внутри процесса задаётся max-async-tasks, масштабирование — replicaCount.
+  processes: 1
+  metrics:
+    # Воркер отдаёт runtime/БД/taskiq/Remnawave метрики на своём порту.
+    # Бизнес-гейджи здесь выключены: это глобальные цифры из БД, и копия на каждую
+    # реплику воркера только продублировала бы одно и то же число под разными лейблами.
+    enabled: true
   resources:
     limits:
       cpu: 500m

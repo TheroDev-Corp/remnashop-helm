@@ -317,6 +317,17 @@ class TransactionDaoImpl(TransactionDao):
         )
         return await self.session.scalar(stmt) or 0
 
+    async def count_unfulfilled(self) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Transaction)
+            .where(
+                Transaction.status == TransactionStatus.COMPLETED,
+                Transaction.fulfilled_at.is_(None),
+            )
+        )
+        return await self.session.scalar(stmt) or 0
+
     async def count_free(self) -> int:
         stmt = (
             select(func.count())

@@ -6,6 +6,7 @@ from loguru import logger
 from remnapy import RemnawaveSDK
 
 from src.core.config import AppConfig
+from src.infrastructure.metrics import build_instrumented_transport
 
 
 class RemnawaveProvider(Provider):
@@ -29,7 +30,9 @@ class RemnawaveProvider(Provider):
             base_url=f"{config.remnawave.url.get_secret_value()}/api",
             headers=headers,
             cookies=config.remnawave.cookies,
-            verify=True,
+            # `verify` moves onto the transport: a client-level value is ignored once a
+            # custom transport is supplied.
+            transport=build_instrumented_transport(verify=True),
             timeout=Timeout(connect=15.0, read=25.0, write=10.0, pool=5.0),
         )
 

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import (
 from src.application.common.uow import UnitOfWork
 from src.core.config import AppConfig
 from src.infrastructure.database import UnitOfWorkImpl
+from src.infrastructure.metrics import instrument_engine, reset_engine_instrumentation
 
 
 class DatabaseProvider(Provider):
@@ -43,8 +44,10 @@ class DatabaseProvider(Provider):
                 "timeout": 10,
             },
         )
+        instrument_engine(engine)
         yield engine
         logger.debug("Disposing AsyncEngine")
+        reset_engine_instrumentation()
         await engine.dispose()
 
     @provide

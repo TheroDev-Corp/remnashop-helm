@@ -22,3 +22,10 @@ data:
   REDIS_HOST: {{ include "remnashop.fullname" . }}-valkey
   REDIS_PORT: "6379"
   REDIS_NAME: "0"
+
+  METRICS_ENABLED: {{ .Values.config.metrics.enabled | quote }}
+  METRICS_HOST: "0.0.0.0"
+  METRICS_PORT: {{ .Values.config.metrics.port | quote }}
+  METRICS_PATH: {{ .Values.config.metrics.path | quote }}
+  METRICS_BUSINESS_CACHE_TTL: {{ .Values.config.metrics.cacheTtl | quote }}
+  METRICS_BUSINESS_TIMEOUT: {{ .Values.config.metrics.timeout | quote }}

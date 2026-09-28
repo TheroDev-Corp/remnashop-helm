@@ -11,6 +11,13 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    {{- if .Values.config.metrics.enabled }}
+    # Не публикуется через ingress: скрейп идёт изнутри кластера.
+    - port: {{ .Values.config.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- end }}
   selector:
     app.kubernetes.io/name: {{ include "remnashop.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}

@@ -16,6 +16,12 @@ spec:
       app.kubernetes.io/component: taskiq-worker
   template:
     metadata:
+      {{- if and (and .Values.config.metrics.enabled .Values.worker.metrics.enabled) .Values.config.metrics.podAnnotations }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.config.metrics.port | quote }}
+        prometheus.io/path: {{ .Values.config.metrics.path | quote }}
+      {{- end }}
       labels:
         app.kubernetes.io/name: {{ include "remnashop.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -44,13 +50,24 @@ spec:
             - "when_received"
             - "--tasks-pattern"
             - "src/infrastructure/taskiq/tasks/*.py"
+            - "--workers"
+            - {{ .Values.worker.processes | quote }}
             - "-fsd"
+          {{- if and .Values.config.metrics.enabled .Values.worker.metrics.enabled }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.config.metrics.port }}
+          {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "remnashop.fullname" . }}-config
             - secretRef:
                 name: {{ include "remnashop.secretName" . }}
           env:
+            {{- if not (and .Values.config.metrics.enabled .Values.worker.metrics.enabled) }}
+            - name: METRICS_ENABLED
+              value: "false"
+            {{- end }}
             - name: DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
