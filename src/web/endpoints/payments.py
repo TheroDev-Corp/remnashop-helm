@@ -15,6 +15,7 @@ from src.core.config import AppConfig
 from src.core.constants import API_V1, PAYMENTS_WEBHOOK_PATH
 from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.exceptions import GatewayNotConfiguredError
+from src.infrastructure.metrics import WebhookOutcome, observe_payment_webhook
 from src.infrastructure.payment_gateways import PlategaGateway
 from src.infrastructure.payment_gateways.base import BasePaymentGateway
 from src.infrastructure.taskiq.tasks.payments import handle_payment_transaction_task
@@ -46,6 +47,7 @@ async def _enqueue_payment_task(
         return None
     except Exception as e:
         logger.exception(f"Failed to enqueue payment task for '{gateway_type}'")
+        observe_payment_webhook(gateway_type, WebhookOutcome.ERROR)
         error_event = ErrorEvent(**config.build.data, exception=e)
         await event_publisher.publish(error_event)
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -99,6 +101,7 @@ async def _process_payment_webhook(
         gateway_enum = PaymentGatewayType(gateway_type.upper())
     except ValueError:
         logger.exception(f"Invalid gateway type received: '{gateway_type}'")
+        observe_payment_webhook(gateway_type, WebhookOutcome.UNKNOWN_GATEWAY)
         return Response(status_code=status.HTTP_404_NOT_FOUND)
 
     gateway: Optional[BasePaymentGateway] = None
@@ -111,21 +114,28 @@ async def _process_payment_webhook(
             platega_payment_method = gateway.selected_payment_method
     except GatewayNotConfiguredError:
         logger.warning(f"Webhook received for inactive/unconfigured gateway '{gateway_enum}'")
+        observe_payment_webhook(gateway_type, WebhookOutcome.UNKNOWN_GATEWAY)
         return Response(status_code=status.HTTP_404_NOT_FOUND)
     except PermissionError:
         logger.warning(f"Webhook signature verification failed for '{gateway_enum}'")
+        observe_payment_webhook(gateway_type, WebhookOutcome.SIGNATURE_INVALID)
         return Response(status_code=status.HTTP_403_FORBIDDEN)
     except (ValueError, NotImplementedError) as e:
         # Malformed or unsupported payloads can be sent by anyone: log, but do not alert admins.
         logger.warning(f"Rejected webhook payload for '{gateway_type}': {e}")
+        observe_payment_webhook(gateway_type, WebhookOutcome.REJECTED)
         return await _build_response(gateway, request, gateway_type)
     except Exception as e:
         logger.exception(f"Error processing webhook for '{gateway_type}': {e}")
+        observe_payment_webhook(gateway_type, WebhookOutcome.ERROR)
         error_event = ErrorEvent(**config.build.data, exception=e)
         await event_publisher.publish(error_event)
         return await _build_response(gateway, request, gateway_type)
 
-    if result is not None:
+    if result is None:
+        # Test pings and technical notifications: acknowledged, nothing to fulfil.
+        observe_payment_webhook(gateway_type, WebhookOutcome.IGNORED)
+    else:
         error_response = await _handle_webhook_result(
             result,
             gateway,
@@ -161,12 +171,16 @@ async def _handle_webhook_result(
         gateway, request, payment_id, transaction_dao, uow
     ):
         logger.warning(f"Paid amount verification failed for '{gateway_enum}' '{payment_id}'")
+        observe_payment_webhook(gateway_type, WebhookOutcome.AMOUNT_MISMATCH)
         return Response(status_code=status.HTTP_403_FORBIDDEN)
     if gateway_enum == PaymentGatewayType.PLATEGA:
         await _sync_platega_payment_method(platega_payment_method, payment_id, transaction_dao, uow)
-    return await _enqueue_payment_task(
+    error_response = await _enqueue_payment_task(
         payment_id, payment_status, gateway_enum, gateway_type, config, event_publisher
     )
+    if error_response is None:
+        observe_payment_webhook(gateway_type, WebhookOutcome.ACCEPTED)
+    return error_response
 
 
 @router.post("/{gateway_type}")

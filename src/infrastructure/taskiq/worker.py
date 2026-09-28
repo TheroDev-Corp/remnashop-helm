@@ -8,6 +8,7 @@ from src.application.common import EventSubscriber
 from src.core.config import AppConfig
 from src.core.logger import setup_logger
 from src.infrastructure.di import create_taskiq_container
+from src.infrastructure.metrics import MetricsRuntime
 from src.infrastructure.services import NotificationWorker
 from src.telegram.dispatcher import get_bg_manager_factory, get_dispatcher, setup_worker_dispatcher
 
@@ -29,8 +30,19 @@ def worker() -> RedisStreamBroker:
     setup_taskiq_dishka(container, broker)
     setup_aiogram_dishka(container, dispatcher, auto_inject=True)
 
+    # Own port, own pod: the worker exports runtime/database/taskiq/Remnawave metrics only.
+    # Business gauges stay in the app deployment — they are global database figures, and one
+    # copy per worker replica would only duplicate the same number under different pod labels.
+    metrics_runtime = MetricsRuntime(
+        config=config,
+        container_factory=lambda: container,
+        role="worker",
+        collect_business=False,
+    )
+
     @broker.on_event(TaskiqEvents.WORKER_STARTUP)
     async def startup(state: TaskiqState) -> None:
+        await metrics_runtime.start()
         event_bus = await container.get(EventSubscriber)
         event_bus.set_container_factory(lambda: container)
         event_bus.autodiscover()
@@ -40,6 +52,7 @@ def worker() -> RedisStreamBroker:
 
     @broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
     async def shutdown(state: TaskiqState) -> None:
+        await metrics_runtime.stop()
         event_bus = await container.get(EventSubscriber)
         await event_bus.shutdown()
         notification_worker = await container.get(NotificationWorker)

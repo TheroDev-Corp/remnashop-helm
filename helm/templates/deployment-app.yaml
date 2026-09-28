@@ -51,6 +51,10 @@ spec:
           ports:
             - name: http
               containerPort: 5000
+            {{- if .Values.config.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.config.metrics.port }}
+            {{- end }}
           livenessProbe:
             tcpSocket:
               port: http

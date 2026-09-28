@@ -22,6 +22,9 @@ os.environ.setdefault("REMNAWAVE_URL", "https://remna.example.com")
 os.environ.setdefault("REMNAWAVE_WEBHOOK_SECRET", "webhook_secret_key_12345")
 os.environ.setdefault("APP_DOMAIN", "bot.example.com")
 os.environ.setdefault("APP_CRYPT_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+# The smoke harness boots the real lifespan; nothing in the suite should bind the
+# exporter's port. Tests that need it build a MetricsServer/ASGI app explicitly.
+os.environ.setdefault("METRICS_ENABLED", "false")
 
 from remnapy.enums import TrafficLimitStrategy
 

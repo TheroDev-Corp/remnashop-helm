@@ -1,0 +1,22 @@
+{{- $dashboard := .Values.config.metrics.grafanaDashboard }}
+{{- if and .Values.config.metrics.enabled $dashboard.enabled }}
+# Подхватывается сайдкаром Grafana (victoria-metrics-k8s-stack, kube-prometheus-stack)
+# по лейблу из values. Сам файл: helm/dashboards/remnashop.json.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "remnashop.fullname" . }}-grafana-dashboard
+  namespace: {{ $dashboard.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "remnashop.labels" . | nindent 4 }}
+    {{- with $dashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $dashboard.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  remnashop.json: |-
+{{ .Files.Get "dashboards/remnashop.json" | indent 4 }}
+{{- end }}

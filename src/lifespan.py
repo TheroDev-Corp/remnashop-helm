@@ -6,6 +6,7 @@ from adaptix import Retort
 from aiogram import Dispatcher
 from aiogram.types import WebhookInfo
 from dishka import AsyncContainer, Scope
+from dishka.integrations.aiogram import AiogramMiddlewareData
 from fastapi import FastAPI
 from loguru import logger
 from redis.asyncio import Redis
@@ -27,6 +28,7 @@ from src.core.config import AppConfig
 from src.core.constants import REMNAWAVE_MAX_VERSION
 from src.core.utils.i18n_helpers import i18n_format_seconds
 from src.core.utils.time import get_uptime
+from src.infrastructure.metrics import MetricsRuntime, set_panel_version
 from src.infrastructure.redis.keys import WelcomedVersionKey
 from src.infrastructure.services import (
     CommandService,
@@ -120,6 +122,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     await _log_remna_id_conflicts(container)
 
+    # `AiogramMiddlewareData` is only bound by the aiogram container middleware; the statistics
+    # interactors need it to resolve `TranslatorRunner` outside of an update.
+    metrics_runtime = MetricsRuntime(
+        config=config,
+        container_factory=lambda: container,
+        role="app",
+        business_context={AiogramMiddlewareData: AiogramMiddlewareData({})},
+    )
+    await metrics_runtime.start()
+
     await telegram_webhook_endpoint.startup()
 
     logger.opt(colors=True).info(
@@ -165,6 +177,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     try:
         panel_version = await remnawave_service.try_connection()
+        set_panel_version(str(panel_version))
         if panel_version >= REMNAWAVE_MAX_VERSION:
             await event_bus.publish(
                 RemnawaveVersionWarningEvent(
@@ -186,6 +199,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     await asyncio.sleep(2)
 
+    await metrics_runtime.stop()
     await event_bus.shutdown()
     await notification_worker.shutdown()
     await telegram_webhook_endpoint.shutdown()

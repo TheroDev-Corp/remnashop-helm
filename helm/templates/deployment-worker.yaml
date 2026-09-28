@@ -44,13 +44,24 @@ spec:
             - "when_received"
             - "--tasks-pattern"
             - "src/infrastructure/taskiq/tasks/*.py"
+            - "--workers"
+            - {{ .Values.worker.processes | quote }}
             - "-fsd"
+          {{- if and .Values.config.metrics.enabled .Values.worker.metrics.enabled }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.config.metrics.port }}
+          {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "remnashop.fullname" . }}-config
             - secretRef:
                 name: {{ include "remnashop.secretName" . }}
           env:
+            {{- if not (and .Values.config.metrics.enabled .Values.worker.metrics.enabled) }}
+            - name: METRICS_ENABLED
+              value: "false"
+            {{- end }}
             - name: DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
