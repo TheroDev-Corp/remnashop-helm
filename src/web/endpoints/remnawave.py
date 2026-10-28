@@ -35,8 +35,15 @@ def _normalize_webhook_payload(payload_dict: dict[str, Any]) -> dict[str, Any]:
     if event.startswith("user."):
         data = RemnawaveImpl._normalize_user_dict(data)
     elif event.startswith("torrent_blocker."):
-        user = dict(data.get("user", {})) if isinstance(data.get("user"), dict) else {}
-        data["user"] = RemnawaveImpl._normalize_user_dict(user)
+        user = data.get("user")
+        if isinstance(user, dict):
+            user = dict(user)
+            # Панель 3.4.4 больше не шлёт user.uuid (в GetFullUserResponseModel остались id и
+            # shortUuid), а remnapy его требует. Подставляем детерминированную заглушку от id, а не
+            # зовём _normalize_user_dict: тот берёт uuid из vlessUuid, и настоящий ключ пользователя
+            # уехал бы в логи handle_torrent_blocker_event.
+            user.setdefault("uuid", f"00000000-0000-0000-0000-{int(user.get('id', 0)):012d}")
+            data["user"] = user
     elif event.startswith("user_hwid_devices."):
         user = dict(data.get("user", {})) if isinstance(data.get("user"), dict) else {}
         user = RemnawaveImpl._normalize_user_dict(user)

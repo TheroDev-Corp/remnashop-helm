@@ -305,6 +305,8 @@ def test_normalize_webhook_payload_fills_user_uuid_for_torrent_blocker() -> None
 
     normalized = _normalize_webhook_payload(payload)
 
-    assert normalized["data"]["user"]["uuid"]
+    # uuid синтетический и выводится из id: настоящий ключ пользователя в логи не попадает
+    assert normalized["data"]["user"]["uuid"] == "00000000-0000-0000-0000-000000000094"
     assert normalized["data"]["user"]["id"] == 94
+    assert "vlessUuid" not in normalized["data"]["user"]
     assert normalized["data"]["node"]["uuid"] == "d2400cad-b601-4ed9-8b5d-9faacf767c43"
