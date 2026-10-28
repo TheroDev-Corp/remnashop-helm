@@ -34,6 +34,9 @@ def _normalize_webhook_payload(payload_dict: dict[str, Any]) -> dict[str, Any]:
     data = dict(data)
     if event.startswith("user."):
         data = RemnawaveImpl._normalize_user_dict(data)
+    elif event.startswith("torrent_blocker."):
+        user = dict(data.get("user", {})) if isinstance(data.get("user"), dict) else {}
+        data["user"] = RemnawaveImpl._normalize_user_dict(user)
     elif event.startswith("user_hwid_devices."):
         user = dict(data.get("user", {})) if isinstance(data.get("user"), dict) else {}
         user = RemnawaveImpl._normalize_user_dict(user)
@@ -111,14 +114,24 @@ async def _process_remnawave_webhook(
             logger.warning("Webhook validation failed: signature mismatch")
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        raw_dict = json.loads(body_str)
-        normalized_dict = _normalize_webhook_payload(raw_dict)
-        payload = WebhookPayloadDto.from_dict(normalized_dict)
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Webhook processing/validation failed with error '{e}'")
+        logger.exception(f"Webhook signature validation failed with error '{e}'")
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        raw_dict = json.loads(body_str)
+        normalized_dict = _normalize_webhook_payload(raw_dict)
+        payload = WebhookPayloadDto.from_dict(normalized_dict)
+    except Exception as e:
+        # Подпись уже проверена: это не чужой запрос, а полезная нагрузка, которую мы не разобрали.
+        # Отвечать 401 здесь нельзя — CrowdSec считает череду отказов перебором и банит адрес панели,
+        # после чего перестают доезжать все вебхуки, а не только сломанный.
+        logger.exception(f"Webhook payload parsing failed with error '{e}'")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Malformed payload"
+        )
 
     if not payload:
         logger.warning("Payload is empty after validation")

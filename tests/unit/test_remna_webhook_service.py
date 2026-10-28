@@ -282,3 +282,29 @@ async def test_expiring_webhook_goes_through_reminder_service(webhook_service, e
     webhook_service.expiry_reminder.remind.assert_awaited_once_with(
         user, subscription, expected_day
     )
+
+
+def test_normalize_webhook_payload_fills_user_uuid_for_torrent_blocker() -> None:
+    """Панель 3.4.4 шлёт в torrent_blocker.report пользователя без uuid — его надо дописать.
+
+    Без этого remnapy роняет разбор (`user.uuid Field required`), ручка отвечает ошибкой,
+    панель повторяет доставку, и вебхуки торрент-блокера не доезжают вовсе.
+    """
+    from src.web.endpoints.remnawave import _normalize_webhook_payload
+
+    payload = {
+        "scope": "torrent_blocker",
+        "event": "torrent_blocker.report",
+        "timestamp": "2026-10-27T14:26:40.270Z",
+        "data": {
+            "node": {"uuid": "d2400cad-b601-4ed9-8b5d-9faacf767c43", "name": "node-1"},
+            "user": {"id": 94, "shortUuid": "abc123", "username": "someone"},
+            "report": {},
+        },
+    }
+
+    normalized = _normalize_webhook_payload(payload)
+
+    assert normalized["data"]["user"]["uuid"]
+    assert normalized["data"]["user"]["id"] == 94
+    assert normalized["data"]["node"]["uuid"] == "d2400cad-b601-4ed9-8b5d-9faacf767c43"
